@@ -1,0 +1,10 @@
+flask
+flask-cors
+werkzeug
+androguard
+lxml
+networkx
+pydot
+cryptography
+asn1crypto
+pyyaml
