@@ -75,8 +75,13 @@ def analyze_apk_endpoint():
             pass
 @app.route('/api/ai-explain', methods=['POST', 'OPTIONS'])
 def ai_explain():
+    #  Handle CORS preflight FIRST
+    if request.method == 'OPTIONS':
+        return jsonify({"success": True}), 200
+
     try:
-        data = request.get_json()
+        # prevents Flask from throwing on empty body
+        data = request.get_json(silent=True)
 
         if not data:
             return jsonify({
@@ -96,9 +101,11 @@ def ai_explain():
             "success": False,
             "error": "AI explanation service unavailable"
         }), 503
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
 
 
 
