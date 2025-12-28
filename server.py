@@ -1,6 +1,7 @@
 import os
 import tempfile
 import uuid
+from ai_explainer import explain_with_ai
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
@@ -59,8 +60,31 @@ def analyze_apk_endpoint():
                 os.rmdir(tmp_dir)
         except Exception:
             pass
+@app.route('/api/ai-explain', methods=['POST', 'OPTIONS'])
+def ai_explain():
+    try:
+        data = request.get_json()
 
+        if not data:
+            return jsonify({
+                "success": False,
+                "error": "No analysis data provided"
+            }), 400
+
+        explanation = explain_with_ai(data)
+
+        return jsonify({
+            "success": True,
+            "ai_explanation": explanation
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": "AI explanation service unavailable"
+        }), 503
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
 
