@@ -9,6 +9,19 @@ from apk_analyzer import analyze_apk
 
 app = Flask(__name__)
 CORS(app)
+CORS(
+    app,
+    resources={r"/api/*": {"origins": "*"}},
+    supports_credentials=True
+)
+
+@app.after_request
+def after_request(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return response
+
 
 MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
@@ -86,5 +99,6 @@ def ai_explain():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
 
 
