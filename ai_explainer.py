@@ -8,6 +8,9 @@ import os
 from typing import Dict
 import openai
 from openai import OpenAI
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -41,7 +44,7 @@ Produce a short paragraph (≤120 words) explaining why these findings matter, w
 
 
 def _call_openai(prompt: str) -> str:
-    print("OPENAI KEY FOUND:", bool(os.getenv("OPENAI_API_KEY")))
+    logger.error("AI DEBUG | KEY PRESENT: %s", bool(os.getenv("OPENAI_API_KEY")))
 
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY not set")
@@ -90,6 +93,7 @@ def explain_with_ai(data: dict) -> str:
         # Any failure: network, auth, timeout, parsing, etc.
 
         return _STATIC_FALLBACK
+
 
 
 
