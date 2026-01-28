@@ -19,7 +19,7 @@ _STATIC_FALLBACK = (
     "AI explanation service is currently unavailable. "
     "Displaying heuristic-based analysis instead."
 )
-
+print("OPENAI KEY FOUND:", bool(os.getenv("OPENAI_API_KEY")))
 def _build_prompt(data: Dict) -> str:
     return f"""
 You are a cybersecurity educator explaining the results of a static, heuristic-based security analysis.
@@ -88,4 +88,5 @@ def explain_with_ai(data: dict) -> str:
         # Any failure: network, auth, timeout, parsing, etc.
 
         return _STATIC_FALLBACK
+
 
