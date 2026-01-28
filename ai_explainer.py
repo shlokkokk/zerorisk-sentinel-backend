@@ -11,9 +11,9 @@ from openai import OpenAI
 
 # Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-MODEL = "gpt-4o-mini"
+MODEL = "gpt-4.1-mini"  
 TEMPERATURE = 0.25
-TIMEOUT = 5  # seconds
+TIMEOUT = 20   # seconds
 
 _STATIC_FALLBACK = (
     "AI explanation service is currently unavailable. "
@@ -41,10 +41,6 @@ Produce a short paragraph (≤120 words) explaining why these findings matter, w
 
 
 def _call_openai(prompt: str) -> str:
-    """
-    Call OpenAI with timeout and minimal cost settings.
-    Raises on any failure so caller can fallback.
-    """
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY not set")
 
@@ -57,9 +53,11 @@ def _call_openai(prompt: str) -> str:
             {"role": "user", "content": prompt},
         ],
         temperature=TEMPERATURE,
-        max_tokens=180,  # ~120 words
+        max_tokens=180,
     )
+
     return response.choices[0].message.content.strip()
+
 
 
 # Public API
@@ -89,4 +87,5 @@ def explain_with_ai(data: dict) -> str:
         return explanation
     except Exception:
         # Any failure: network, auth, timeout, parsing, etc.
+
         return _STATIC_FALLBACK
