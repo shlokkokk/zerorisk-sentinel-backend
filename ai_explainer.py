@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-MODEL = "gpt-4.1-mini"  
+MODEL = "gpt-4o-mini" 
 TEMPERATURE = 0.25
 TIMEOUT = 20   # seconds
 
@@ -89,10 +89,14 @@ def explain_with_ai(data: dict) -> str:
         prompt = _build_prompt(data)
         explanation = _call_openai(prompt)
         return explanation
-    except Exception:
-        # Any failure: network, auth, timeout, parsing, etc.
+    except Exception as e:
+        logger.error("AI EXPLAIN FAILED: %s", repr(e))
+        return {
+            "text": _STATIC_FALLBACK,
+            "fallback": True
+        }
 
-        return _STATIC_FALLBACK
+
 
 
 
