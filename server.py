@@ -1,11 +1,18 @@
 import os
 import tempfile
 import uuid
-from ai_explainer import explain_with_ai
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-from apk_analyzer import analyze_apk
+def analyze_apk_lazy(path):
+    from apk_analyzer import analyze_apk
+    return analyze_apk(path)
+
+def explain_with_ai_lazy(data):
+    from ai_explainer import explain_with_ai
+    return explain_with_ai(data)
+
 
 app = Flask(__name__)
 CORS(app)
@@ -57,7 +64,7 @@ def analyze_apk_endpoint():
 
     try:
         file.save(tmp_path)
-        analysis_result = analyze_apk(tmp_path)
+        analysis_result = analyze_apk_lazy(tmp_path)
         return jsonify({"success": True, "data": analysis_result}), 200
     except Exception as e:
         return jsonify({
@@ -89,7 +96,7 @@ def ai_explain():
                 "error": "No analysis data provided"
             }), 400
 
-        explanation = explain_with_ai(data)
+        explanation = explain_with_ai_lazy(data)
 
         return jsonify({
             "success": True,
@@ -105,6 +112,7 @@ def ai_explain():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
 
 
 
