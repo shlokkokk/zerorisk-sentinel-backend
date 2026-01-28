@@ -98,10 +98,21 @@ def ai_explain():
 
         explanation = explain_with_ai_lazy(data)
 
+        # If AI explainer returned fallback object
+        if isinstance(explanation, dict) and explanation.get("fallback") is True:
+            return jsonify({
+                "success": False,
+                "fallback": True,
+                "ai_explanation": explanation["text"]
+            }), 200
+
+        # Real AI response
         return jsonify({
             "success": True,
+            "fallback": False,
             "ai_explanation": explanation
         }), 200
+
 
     except Exception as e:
         return jsonify({
@@ -112,6 +123,7 @@ def ai_explain():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
 
 
 
