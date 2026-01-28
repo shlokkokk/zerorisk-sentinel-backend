@@ -46,18 +46,17 @@ def _call_openai(prompt: str) -> str:
 
     client = OpenAI(api_key=OPENAI_API_KEY, timeout=TIMEOUT)
 
-    response = client.chat.completions.create(
+    response = client.responses.create(
         model=MODEL,
-        messages=[
+        input=[
             {"role": "system", "content": "You are a cybersecurity educator."},
             {"role": "user", "content": prompt},
         ],
         temperature=TEMPERATURE,
-        max_tokens=180,
+        max_output_tokens=180,
     )
 
-    return response.choices[0].message.content.strip()
-
+    return response.output_text.strip()
 
 
 # Public API
@@ -89,3 +88,4 @@ def explain_with_ai(data: dict) -> str:
         # Any failure: network, auth, timeout, parsing, etc.
 
         return _STATIC_FALLBACK
+
