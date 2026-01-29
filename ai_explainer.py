@@ -1,35 +1,25 @@
-"""
-
-Optional AI explanation service for security analysis results
-
-"""
+"""Optional AI explanation service for security analysis results"""
 
 import os
-from typing import Dict
-import openai
-from openai import OpenAI
+from typing import Dict, Union
 import logging
+import requests
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Configuration
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-MODEL = "gpt-4o-mini" 
-TEMPERATURE = 0.25
-TIMEOUT = 20   # seconds
+# Ollama via ngrok tunnel (set in Render env vars)
+MODEL = os.getenv("OLLAMA_MODEL", "huihui_ai/foundation-sec-abliterated")
+TIMEOUT = 60
 
 _STATIC_FALLBACK = (
     "AI explanation service is currently unavailable. "
     "Displaying heuristic-based analysis instead."
 )
 
-def _build_prompt(data: Dict) -> str:
-    return f"""
-You are a cybersecurity educator explaining the results of a static, heuristic-based security analysis.
 
-Base your explanation strictly on the provided findings and scores.
-Describe what these indicators suggest in a measured, academic tone, without assuming intent or execution.
-Focus on interpretation rather than verdicts, and clearly frame the analysis as indicative rather than definitive.
+def _build_prompt(data: Dict) -> str:
+    return f"""You are a cybersecurity educator explaining static heuristic security analysis results.
 
 Analysis details:
 - Type: {data.get('analysis_type', 'unknown')}
@@ -38,66 +28,62 @@ Analysis details:
 - Threat level: {data.get('threat_level', 'unknown')}
 - Findings: {', '.join(data.get('findings', []))}
 
-Produce a short paragraph (≤120 words) explaining why these findings matter, while emphasizing that the analysis is heuristic-based and not proof of malicious intent.
-""".strip()
+Explain what these indicators suggest in a measured, academic tone. Emphasize this is heuristic-based analysis, not proof of malicious intent. Keep under 120 words."""
 
 
+def _call_ollama(prompt: str) -> str:
+    """Call Ollama through ngrok tunnel."""
+    host = os.getenv("OLLAMA_HOST", "")
+    
+    if not host:
+        raise RuntimeError("OLLAMA_HOST not set. Configure in Render dashboard.")
+    
+    logger.info("OLLAMA | Calling %s with model: %s", host, MODEL)
+    
+    # Verify model exists
+    try:
+        resp = requests.get(f"{host}/api/tags", timeout=5)
+        models = [m["name"] for m in resp.json().get("models", [])]
+        if MODEL not in models and f"{MODEL}:latest" not in models:
+            raise RuntimeError(f"Model {MODEL} not found in Ollama. Run: ollama pull {MODEL}")
+    except requests.exceptions.ConnectionError:
+        raise RuntimeError(f"Cannot connect to Ollama at {host}. Is ngrok running?")
 
-def _call_openai(prompt: str) -> str:
-    logger.error("AI DEBUG | KEY PRESENT: %s", bool(os.getenv("OPENAI_API_KEY")))
+    # Generate
+    payload = {
+        "model": MODEL,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.25,
+            "num_predict": 200
+        }
+    }
 
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY not set")
-
-    client = OpenAI(api_key=OPENAI_API_KEY, timeout=TIMEOUT)
-
-    response = client.responses.create(
-        model=MODEL,
-        input=[
-            {"role": "system", "content": "You are a cybersecurity educator."},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=TEMPERATURE,
-        max_output_tokens=180,
+    response = requests.post(
+        f"{host}/api/generate",
+        json=payload,
+        timeout=TIMEOUT
     )
+    response.raise_for_status()
+    
+    return response.json().get("response", "").strip()
 
-    return response.output_text.strip()
 
-
-# Public API
-def explain_with_ai(data: dict) -> str:
-    """
-    Generate a human-readable explanation of heuristic security findings.
-
-    Parameters
-    ----------
-    data : dict
-        Must contain keys:
-        - analysis_type : str
-        - target : str
-        - threat_score : int  (0-100)
-        - threat_level : str  ('safe', 'low', 'medium', 'high', 'critical')
-        - findings : list[str]
-
-    Returns
-    -------
-    str
-        Plain-text explanation.  If the AI service fails, a static fallback
-        message is returned.
-    """
+def explain_with_ai(data: dict) -> Union[str, dict]:
+    """Generate explanation using Ollama via ngrok."""
     try:
         prompt = _build_prompt(data)
-        explanation = _call_openai(prompt)
+        explanation = _call_ollama(prompt)
+        
+        if not explanation or len(explanation) < 10:
+            raise ValueError("Empty model response")
+            
         return explanation
+        
     except Exception as e:
-        logger.error("AI EXPLAIN FAILED: %s", repr(e))
+        logger.error("OLLAMA FAILED: %s", repr(e))
         return {
             "text": _STATIC_FALLBACK,
             "fallback": True
         }
-
-
-
-
-
-
