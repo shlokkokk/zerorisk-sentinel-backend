@@ -1,13 +1,26 @@
 import os
 import tempfile
 import uuid
+import logging
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
+
+# Logging setup
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+_STATIC_FALLBACK = (
+    "AI explanation service is currently unavailable. "
+    "Displaying heuristic-based analysis instead."
+)
+
+
 def analyze_apk_lazy(path):
     from apk_analyzer import analyze_apk
     return analyze_apk(path)
+
 
 def explain_with_ai_lazy(data):
     from ai_explainer import explain_with_ai
@@ -15,12 +28,10 @@ def explain_with_ai_lazy(data):
 
 
 app = Flask(__name__)
-CORS(app)
-CORS(
-    app,
-    resources={r"/api/*": {"origins": "*"}},
-    supports_credentials=True
-)
+
+# CORS setup
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+
 
 @app.after_request
 def after_request(response):
@@ -30,21 +41,23 @@ def after_request(response):
     return response
 
 
+# Configuration
 MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB
 app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 ALLOWED_EXTENSIONS = {'apk'}
 
-app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
 
 @app.route('/api/status', methods=['GET'])
 def status():
     return jsonify({
         "backend": "online",
-        "features": ["apk_analysis", "http_status_analysis"]
+        "features": ["apk_analysis", "ai_explanation"]
     }), 200
+
 
 @app.route('/api/analyze-apk', methods=['POST'])
 def analyze_apk_endpoint():
@@ -67,65 +80,89 @@ def analyze_apk_endpoint():
         analysis_result = analyze_apk_lazy(tmp_path)
         return jsonify({"success": True, "data": analysis_result}), 200
     except Exception as e:
+        logger.error(f"APK ANALYSIS ERROR: {e}")
         return jsonify({
             "success": False,
             "error": "APK analysis failed due to server-side processing error"
         }), 500
-
     finally:
         try:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             if os.path.exists(tmp_dir):
                 os.rmdir(tmp_dir)
-        except Exception:
-            pass
+        except Exception as cleanup_error:
+            logger.warning(f"Cleanup error: {cleanup_error}")
+
+
 @app.route('/api/ai-explain', methods=['POST', 'OPTIONS'])
 def ai_explain():
-    #  Handle CORS preflight FIRST
+    """AI explanation endpoint with proper error handling."""
+    
+    # Handle CORS preflight FIRST
     if request.method == 'OPTIONS':
-        return jsonify({"success": True}), 200
+        response = jsonify({"success": True})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.add('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        return response, 200
 
     try:
-        # prevents Flask from throwing on empty body
+        # Parse JSON body
         data = request.get_json(silent=True)
-
+        
         if not data:
             return jsonify({
                 "success": False,
-                "error": "No analysis data provided"
+                "error": "No JSON data provided",
+                "fallback": True,
+                "ai_explanation": _STATIC_FALLBACK
             }), 400
-
+        
+        # Validate required fields
+        required_fields = ['analysis_type', 'target']
+        missing_fields = [f for f in required_fields if f not in data]
+        
+        if missing_fields:
+            return jsonify({
+                "success": False,
+                "error": f"Missing required fields: {', '.join(missing_fields)}",
+                "fallback": True,
+                "ai_explanation": _STATIC_FALLBACK
+            }), 400
+        
+        # Call AI explainer
         explanation = explain_with_ai_lazy(data)
-
-        # If AI explainer returned fallback object
+        
+        # Check if we got a fallback response
         if isinstance(explanation, dict) and explanation.get("fallback") is True:
             return jsonify({
                 "success": False,
                 "fallback": True,
-                "ai_explanation": explanation["text"]
+                "ai_explanation": explanation.get("text", _STATIC_FALLBACK),
+                "error": explanation.get("error", "AI service unavailable")
             }), 200
-
-        # Real AI response
+        
+        # Success - real AI response
         return jsonify({
             "success": True,
             "fallback": False,
             "ai_explanation": explanation
         }), 200
-
-
+        
     except Exception as e:
+        logger.error(f"AI EXPLAIN ENDPOINT ERROR: {e}")
         return jsonify({
             "success": False,
-            "error": "AI explanation service unavailable"
-        }), 503
+            "fallback": True,
+            "ai_explanation": _STATIC_FALLBACK,
+            "error": "Internal server error"
+        }), 500
+
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
-
-
 
 
 
