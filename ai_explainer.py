@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 # Configuration from environment variables
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-MODEL = os.getenv("GROQ_MODEL", "llama3-8b-8192")  # Default to free fast model
+MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # Most capable
 
 # Available models on Groq free tier (in order of preference):
 # - "llama3-8b-8192" (fastest, good for demos)
@@ -165,3 +165,4 @@ def explain_with_ai(data: dict) -> Union[str, dict]:
             "fallback": True,
             "error": error_msg
         }
+
