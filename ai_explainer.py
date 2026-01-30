@@ -13,12 +13,6 @@ logger = logging.getLogger(__name__)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")  # Most capable
 
-# Available models on Groq free tier (in order of preference):
-# - "llama3-8b-8192" (fastest, good for demos)
-# - "gemma2-9b-it" (Google, good quality)
-# - "mixtral-8x7b-32768" (largest context)
-# - "llama-3.1-8b-instant" (latest Llama)
-
 _STATIC_FALLBACK = (
     "AI explanation service is currently unavailable. "
     "Displaying heuristic-based analysis instead."
@@ -35,18 +29,34 @@ def _build_prompt(data: Dict) -> str:
     
     findings_text = ", ".join(findings) if findings else "No specific findings"
     
-    return f"""You are a cybersecurity educator explaining static heuristic security analysis results.
+    return f"""
+You are a senior malware analyst assisting a security report.
 
-ANALYSIS DETAILS:
-- Type: {analysis_type}
+Context:
+This is a STATIC heuristic analysis of source code. No execution evidence is available.
+
+Scan Summary:
 - Target: {target}
 - Threat Score: {threat_score}/100
 - Threat Level: {threat_level}
-- Findings: {findings_text}
 
-TASK:
-Explain what these indicators suggest in a measured, academic tone. Emphasize this is heuristic-based static analysis, not proof of malicious execution. Provide context about what behaviors were flagged and why they might be concerning. Keep under 120 words. Be concise and technical."""
+Detected Indicators:
+{chr(10).join(f"- {f}" for f in findings) if findings else "- None"}
 
+Your task:
+1. Identify which indicators are MOST critical and why.
+2. Explain what functionality the code appears capable of.
+3. Clarify what is UNKNOWN due to static-only analysis.
+4. State what additional evidence would be required to confirm malicious intent.
+
+Rules:
+- Do NOT restate the scan summary.
+- Do NOT give generic disclaimers.
+- Be concise, analytical, and practical.
+- Write like a security analyst briefing a developer/user.
+
+Limit: ~100 words.
+"""
 
 def _validate_config() -> tuple[bool, str]:
     """Validate Groq configuration before making API calls."""
@@ -165,4 +175,5 @@ def explain_with_ai(data: dict) -> Union[str, dict]:
             "fallback": True,
             "error": error_msg
         }
+
 
