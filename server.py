@@ -17,12 +17,12 @@ _STATIC_FALLBACK = (
 )
 
 
-def analyze_apk_lazy(path):
+def analyze_apk_safe(path):
     from apk_analyzer import analyze_apk
     return analyze_apk(path)
 
 
-def explain_with_ai_lazy(data):
+def explain_with_ai_safe(data):
     from ai_explainer import explain_with_ai
     return explain_with_ai(data)
 
@@ -77,7 +77,7 @@ def analyze_apk_endpoint():
 
     try:
         file.save(tmp_path)
-        analysis_result = analyze_apk_lazy(tmp_path)
+        analysis_result = analyze_apk_safe(tmp_path)
         return jsonify({"success": True, "data": analysis_result}), 200
     except Exception as e:
         logger.error(f"APK ANALYSIS ERROR: {e}")
@@ -132,7 +132,7 @@ def ai_explain():
             }), 400
         
         # Call AI explainer
-        explanation = explain_with_ai_lazy(data)
+        explanation = explain_with_ai_safe(data)
         
         # Check if we got a fallback response
         if isinstance(explanation, dict) and explanation.get("fallback") is True:
@@ -163,6 +163,7 @@ def ai_explain():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
+
 
 
 
