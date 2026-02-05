@@ -16,6 +16,15 @@ _STATIC_FALLBACK = (
     "Displaying heuristic-based analysis instead."
 )
 
+# Import file scanner (NEW)
+try:
+    from file_scanner import scan_file, get_scanner, FileScanner
+    FILE_SCANNER_AVAILABLE = True
+    logger.info("[INIT] File scanner loaded successfully")
+except ImportError as e:
+    FILE_SCANNER_AVAILABLE = False
+    logger.warning(f"[INIT] File scanner not available: {e}")
+
 
 def analyze_apk_safe(path):
     from apk_analyzer import analyze_apk
@@ -53,14 +62,130 @@ def allowed_file(filename):
 
 @app.route('/api/status', methods=['GET'])
 def status():
+    """Updated status endpoint with file scanner info"""
+    scanner = get_scanner() if FILE_SCANNER_AVAILABLE else None
+    
+    features = ["apk_analysis", "ai_explanation"]
+    if FILE_SCANNER_AVAILABLE:
+        features.append("file_scanning")
+        features.append("yara_rules")
+        features.append("virustotal")
+    
     return jsonify({
         "backend": "online",
-        "features": ["apk_analysis", "ai_explanation"]
+        "features": features,
+        "file_scanner": {
+            "available": FILE_SCANNER_AVAILABLE,
+            "yara_loaded": scanner.yara_rules is not None if scanner else False,
+            "virustotal_configured": bool(os.getenv("VIRUSTOTAL_API_KEY", ""))
+        }
     }), 200
+
+
+# ============================================
+# NEW ENDPOINT: General File Scanning
+# ============================================
+@app.route('/api/scan-file', methods=['POST'])
+def scan_file_endpoint():
+    """
+    Scan any file for malware using YARA rules, entropy analysis, 
+    file hashing, and VirusTotal lookup.
+    """
+    if not FILE_SCANNER_AVAILABLE:
+        return jsonify({
+            "success": False,
+            "error": "File scanner not available. Check server logs."
+        }), 503
+    
+    if 'file' not in request.files:
+        return jsonify({"success": False, "error": "No file part in the request"}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"success": False, "error": "No selected file"}), 400
+
+    filename = secure_filename(file.filename)
+    tmp_dir = tempfile.mkdtemp()
+    tmp_path = os.path.join(tmp_dir, f"{uuid.uuid4()}_{filename}")
+
+    try:
+        # Save uploaded file
+        file.save(tmp_path)
+        file_size = os.path.getsize(tmp_path)
+        
+        logger.info(f"[SCAN-FILE] Received: {filename} ({file_size} bytes)")
+        
+        # Scan the file
+        scan_result = scan_file(tmp_path, filename)
+        
+        return jsonify({
+            "success": True,
+            "data": scan_result
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"[SCAN-FILE] ERROR: {e}")
+        return jsonify({
+            "success": False,
+            "error": f"File scan failed: {str(e)}"
+        }), 500
+        
+    finally:
+        # Cleanup
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            if os.path.exists(tmp_dir):
+                os.rmdir(tmp_dir)
+        except Exception as cleanup_error:
+            logger.warning(f"[SCAN-FILE] Cleanup error: {cleanup_error}")
+
+
+# ============================================
+# NEW ENDPOINT: Hash Lookup (no file upload)
+# ============================================
+@app.route('/api/scan-hash/<file_hash>', methods=['GET'])
+def scan_hash_endpoint(file_hash):
+    """
+    Check a file hash against VirusTotal without uploading the file.
+    Supports MD5 (32 chars), SHA1 (40 chars), SHA256 (64 chars).
+    """
+    if not FILE_SCANNER_AVAILABLE:
+        return jsonify({
+            "success": False,
+            "error": "File scanner not available"
+        }), 503
+    
+    # Validate hash length
+    if len(file_hash) not in [32, 40, 64]:
+        return jsonify({
+            "success": False,
+            "error": "Invalid hash length. Expected MD5 (32), SHA1 (40), or SHA256 (64)"
+        }), 400
+    
+    try:
+        scanner = get_scanner()
+        vt_result = scanner.check_virustotal(file_hash)
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "hash": file_hash,
+                "virustotal": vt_result
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"[SCAN-HASH] ERROR: {e}")
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 @app.route('/api/analyze-apk', methods=['POST'])
 def analyze_apk_endpoint():
+    """Existing APK analysis endpoint"""
     if 'file' not in request.files:
         return jsonify({"success": False, "error": "No file part in the request"}), 400
 
@@ -163,7 +288,3 @@ def ai_explain():
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
-
-
-
-

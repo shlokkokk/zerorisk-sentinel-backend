@@ -1,6 +1,9 @@
+# Core Flask dependencies
 flask
 flask-cors
 werkzeug
+
+# APK Analysis
 androguard
 lxml
 networkx
@@ -8,6 +11,12 @@ pydot
 cryptography
 asn1crypto
 
+# AI Explanation
 pyyaml
 openai
 groq
+
+# NEW: File Scanning Dependencies
+yara-python
+python-magic
+requests
