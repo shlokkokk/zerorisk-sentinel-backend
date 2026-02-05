@@ -1,6 +1,7 @@
 import re
 import json
 import logging
+import os
 from typing import Dict, List, Any, Optional
 
 from androguard.core.apk import APK
@@ -118,21 +119,46 @@ def generate_explanation(risk_level: str, score: int, risky_count: int) -> str:
     )
 
 def analyze_apk(file_path: str) -> Dict[str, Any]:
+    """
+    MERGED: APK permissions + file scanner (hashes, entropy, VirusTotal)
+    """
+    # Try to import file scanner
+    try:
+        from file_scanner import scan_file
+        FILE_SCANNER_AVAILABLE = True
+    except ImportError:
+        FILE_SCANNER_AVAILABLE = False
+    
+    # Result with ALL fields (APK + file scanner)
     result = {
         "apk_metadata": {},
         "permissions_detected": [],
         "risky_permissions": [],
         "risk_score": 0,
         "risk_level": "safe",
-        "explanation": ""
+        "explanation": "",
+        # NEW: File scanner fields
+        "hashes": {},
+        "entropy": 0.0,
+        "file_type": {},
+        "virustotal": None,
+        "findings": []
     }
+    
     try:
         apk = APK(file_path)
     except Exception as e:
         logger.error("Failed to load APK: %s", e)
-        result["explanation"] = "Failed to analyze APK due to malformed or unreadable file."
+        result["explanation"] = "Failed to analyze APK - malformed file"
+        # Still try file scanner
+        if FILE_SCANNER_AVAILABLE:
+            file_data = scan_file(file_path, os.path.basename(file_path))
+            result["hashes"] = file_data.get("hashes", {})
+            result["entropy"] = file_data.get("entropy", 0)
+            result["virustotal"] = file_data.get("virustotal")
         return result
 
+    # Extract APK data
     try:
         result["apk_metadata"] = {
             "package_name": apk.get_package(),
@@ -147,35 +173,77 @@ def analyze_apk(file_path: str) -> Dict[str, Any]:
         result["permissions_detected"] = apk.get_permissions() or []
     except Exception as e:
         logger.error("Error extracting APK metadata: %s", e)
-        result["explanation"] = "Partial analysis due to extraction errors."
-        return result
+        result["explanation"] = "Partial analysis due to extraction errors"
 
+    # Analyze permissions
     risky = analyze_permissions(result["permissions_detected"])
     result["risky_permissions"] = risky
     result["risk_score"] = calculate_risk_score(risky)
 
-    permissions = result["permissions_detected"]
-
-    if (
-        "android.permission.BIND_ACCESSIBILITY_SERVICE" in permissions and
-        "android.permission.SYSTEM_ALERT_WINDOW" in permissions
-    ):
+    # Permission combo heuristics
+    perms = result["permissions_detected"]
+    if "android.permission.BIND_ACCESSIBILITY_SERVICE" in perms and \
+       "android.permission.SYSTEM_ALERT_WINDOW" in perms:
         result["risk_score"] += 25
-
-    if (
-        "android.permission.RECEIVE_BOOT_COMPLETED" in permissions and
-        "android.permission.INTERNET" in permissions
-    ):
+    if "android.permission.RECEIVE_BOOT_COMPLETED" in perms and \
+       "android.permission.INTERNET" in perms:
         result["risk_score"] += 15
- 
+    
     result["risk_score"] = min(result["risk_score"], 100)
 
+    if FILE_SCANNER_AVAILABLE:
+        try:
+            filename = os.path.basename(file_path)
+            file_data = scan_file(file_path, filename)
+            
+            # Merge file scanner results
+            result["hashes"] = file_data.get("hashes", {})
+            result["entropy"] = file_data.get("entropy", 0.0)
+            result["file_type"] = file_data.get("file_type", {})
+            result["virustotal"] = file_data.get("virustotal")
+            
+            # Add important findings
+            for finding in file_data.get("findings", []):
+                if finding.get("severity") in ["medium", "high", "critical"]:
+                    result["findings"].append(finding)
+            
+            # BOOST SCORE if VirusTotal shows malware
+            vt = result.get("virustotal")
+            if vt and vt.get("found"):
+                malicious = vt.get("malicious", 0)
+                if malicious >= 5:
+                    result["risk_score"] = min(result["risk_score"] + 40, 100)
+                    result["findings"].append({
+                        "type": "virustotal_malware",
+                        "severity": "critical",
+                        "description": f"VirusTotal: {malicious} engines detected this APK"
+                    })
+                elif malicious >= 1:
+                    result["risk_score"] = min(result["risk_score"] + 20, 100)
+                    result["findings"].append({
+                        "type": "virustotal_flagged",
+                        "severity": "high",
+                        "description": f"VirusTotal: {malicious} engine(s) flagged this APK"
+                    })
+            
+            # BOOST if high entropy (packed/encrypted)
+            if result["entropy"] > 7.5:
+                result["risk_score"] = min(result["risk_score"] + 10, 100)
+                result["findings"].append({
+                    "type": "high_entropy",
+                    "severity": "medium", 
+                    "description": f"High entropy ({result['entropy']}) - may be packed"
+                })
+                
+        except Exception as e:
+            logger.error("File scanner failed: %s", e)
+    
+    # Final risk level
     result["risk_level"] = determine_risk_level(result["risk_score"])
     result["explanation"] = generate_explanation(
         result["risk_level"],
         result["risk_score"],
-        len(risky)
+        len(result["risky_permissions"])
     )
-
-
+    
     return result
