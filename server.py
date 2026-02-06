@@ -15,8 +15,14 @@ _STATIC_FALLBACK = (
     "AI explanation service is currently unavailable. "
     "Displaying heuristic-based analysis instead."
 )
-
-# Import file scanner (NEW)
+try:
+    from url_scanner import scan_url, URLScanner
+    URL_SCANNER_AVAILABLE = True
+    logger.info("[INIT] URL scanner loaded")
+except ImportError as e:
+    URL_SCANNER_AVAILABLE = False
+    logger.warning(f"[INIT] URL scanner not available: {e}")
+# Import file scanner 
 try:
     from file_scanner import scan_file, get_scanner, FileScanner
     FILE_SCANNER_AVAILABLE = True
@@ -81,10 +87,7 @@ def status():
         }
     }), 200
 
-
-# ============================================
 # NEW ENDPOINT: General File Scanning
-# ============================================
 @app.route('/api/scan-file', methods=['POST'])
 def scan_file_endpoint():
     """
@@ -141,9 +144,7 @@ def scan_file_endpoint():
             logger.warning(f"[SCAN-FILE] Cleanup error: {cleanup_error}")
 
 
-# ============================================
 # NEW ENDPOINT: Hash Lookup (no file upload)
-# ============================================
 @app.route('/api/scan-hash/<file_hash>', methods=['GET'])
 def scan_hash_endpoint(file_hash):
     """
@@ -219,7 +220,26 @@ def analyze_apk_endpoint():
         except Exception as cleanup_error:
             logger.warning(f"Cleanup error: {cleanup_error}")
 
-
+@app.route('/api/analyze-url', methods=['POST'])
+def analyze_url_endpoint():
+    """Analyze URL with 15 second timeout for all checks"""
+    if not URL_SCANNER_AVAILABLE:
+        return jsonify({"success": False, "error": "URL scanner not available"}), 503
+    
+    data = request.get_json()
+    if not data or 'url' not in data:
+        return jsonify({"success": False, "error": "No URL provided"}), 400
+    
+    url = data['url']
+    logger.info(f"[URL-API] Analyzing: {url}")
+    
+    try:
+        result = scan_url(url)
+        return jsonify({"success": True, "data": result}), 200
+    except Exception as e:
+        logger.error(f"[URL-API] Error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+    
 @app.route('/api/ai-explain', methods=['POST', 'OPTIONS'])
 def ai_explain():
     """AI explanation endpoint with proper error handling."""

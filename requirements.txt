@@ -16,7 +16,10 @@ pyyaml
 openai
 groq
 
-# NEW: File Scanning Dependencies
+# File Scanning Dependencies
 yara-python
 python-magic
 requests
+
+dnspython>=2.3.0
+python-whois>=0.8.0
