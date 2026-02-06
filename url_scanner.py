@@ -185,24 +185,50 @@ class URLScanner:
     
     def analyze_dns(self, domain: str) -> Dict:
         if not DNS_AVAILABLE:
-            return {'available': False}
+            return {'available': False, 'note': 'dnspython not installed'}
         
-        result = {'available': True, 'has_a': False, 'has_mx': False, 'has_spf': False}
+        result = {
+            'available': True, 
+            'has_a': False, 
+            'has_mx': False, 
+            'has_spf': False,
+            'a_records': [],
+            'mx_records': [],
+            'error': None
+        }
+        
         try:
-            dns.resolver.resolve(domain, 'A')
+            # A records
+            a_records = dns.resolver.resolve(domain, 'A')
             result['has_a'] = True
-            try:
-                dns.resolver.resolve(domain, 'MX')
-                result['has_mx'] = True
-            except:
-                pass
-            txt = dns.resolver.resolve(domain, 'TXT')
-            for t in txt:
-                if 'v=spf1' in str(t):
+            result['a_records'] = [str(r) for r in a_records]
+            logger.info(f"[DNS] {domain} A records: {result['a_records']}")
+        except Exception as e:
+            logger.warning(f"[DNS] A record lookup failed for {domain}: {e}")
+            result['error'] = f"A record: {str(e)}"
+        
+        try:
+            # MX records
+            mx_records = dns.resolver.resolve(domain, 'MX')
+            result['has_mx'] = True
+            result['mx_records'] = [str(r.exchange) for r in mx_records]
+            logger.info(f"[DNS] {domain} MX records: {result['mx_records']}")
+        except Exception as e:
+            logger.warning(f"[DNS] MX record lookup failed for {domain}: {e}")
+        
+        try:
+            # SPF from TXT
+            txt_records = dns.resolver.resolve(domain, 'TXT')
+            for t in txt_records:
+                txt_str = str(t)
+                if 'v=spf1' in txt_str:
                     result['has_spf'] = True
+                    result['spf_record'] = txt_str
+                    logger.info(f"[DNS] {domain} SPF found")
                     break
-        except:
-            pass
+        except Exception as e:
+            logger.warning(f"[DNS] TXT/SPF lookup failed for {domain}: {e}")
+        
         return result
     
     def follow_redirects(self, url: str, max_hops: int = 5) -> Dict:
