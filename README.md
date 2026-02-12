@@ -1,6 +1,6 @@
 # ZeroRisk Sentinel - Backend
 
-A Python Flask backend that powers ZeroRisk Sentinel's advanced threat detection capabilities. Provides YARA-based malware scanning, VirusTotal integration, URL threat intelligence, and AI-powered analysis explanations.
+A Python Flask backend that powers ZeroRisk Sentinel's advanced threat detection capabilities. Provides YARA-based malware scanning, VirusTotal integration, URL threat intelligence with optional browser sandbox analysis via urlscan.io, and AI-powered analysis explanations.
 
 **Created by Shlok Shah**
 
@@ -8,7 +8,7 @@ A Python Flask backend that powers ZeroRisk Sentinel's advanced threat detection
 
 ## Overview
 
-This backend extends the frontend's capabilities with server-side analysis that would be impractical or impossible in a browser. It handles file hashing, YARA rule compilation, external API queries, and LLM-based explanations.
+This backend extends the frontend's capabilities with server-side analysis that would be impractical or impossible in a browser. It handles file hashing, YARA rule compilation, external API queries, LLM-based explanations, and live browser sandboxing for URLs.
 
 ---
 
@@ -17,7 +17,7 @@ This backend extends the frontend's capabilities with server-side analysis that 
 ```
 ├── server.py           # Flask app with CORS, route handlers
 ├── file_scanner.py     # YARA rules, entropy, hashes, VirusTotal
-├── url_scanner.py      # Multi-source URL threat intelligence
+├── url_scanner.py      # Multi-source URL threat intelligence + urlscan.io
 ├── apk_analyzer.py     # Android APK permission analysis
 ├── ai_explainer.py     # Groq API integration for explanations
 ├── requirements.txt    # Python dependencies
@@ -49,7 +49,8 @@ Frontend Request
        │               ├── URLHaus
        │               ├── VirusTotal URL
        │               ├── SSL certificate analysis
-       │               └── DNS/WHOIS checks
+       │               ├── DNS/WHOIS checks
+       │               └── urlscan.io (Deep Scan sandbox)
        │
        ├──► APK? ───► apk_analyzer.py
        │               ├── AndroGuard parsing
@@ -87,6 +88,19 @@ Frontend Request
 | **Redirect Chain** | Follows up to 5 redirects |
 | **Domain Age** | WHOIS-based registration analysis |
 | **Heuristics** | IP URLs, shorteners, phishing keywords, risky TLDs |
+| **Deep Scan (urlscan.io)** | Live browser sandbox analysis with screenshots, network monitoring |
+
+### URLScan.io Integration (Deep Scan)
+
+The Deep Scan feature submits URLs to urlscan.io for live browser sandbox analysis:
+
+- **Screenshot capture** of rendered page
+- **Network activity** monitoring (requests, domains, IPs)
+- **Console log** collection
+- **Brand impersonation** detection
+- **Malicious/suspicious verdicts** from sandbox analysis
+- **Server information** extraction (ASN, country, server type)
+- **DOM hash** fingerprinting
 
 ### APK Analyzer (`apk_analyzer.py`)
 
@@ -126,6 +140,8 @@ Frontend Request
 - Phishing keywords: +20
 - Risky TLD: +20
 - No HTTPS: +15
+- urlscan.io malicious verdict: +85
+- urlscan.io suspicious verdict: +60
 
 **APK Analyzer:**
 - Critical permissions: +35 each
@@ -184,6 +200,20 @@ Body: { "url": "https://example.com" }
 ```
 Returns threat score, findings, external service results, heuristic analysis.
 
+### URLScan.io Deep Scan - Submit
+```
+POST /api/urlscan/submit
+Content-Type: application/json
+Body: { "url": "https://example.com" }
+```
+Submits URL to urlscan.io sandbox. Returns scan_id for polling.
+
+### URLScan.io Deep Scan - Get Result
+```
+GET /api/urlscan/result/<scan_id>
+```
+Polls for sandbox analysis results. Returns screenshot URL, network stats, verdicts, findings.
+
 ### AI Explanation
 ```
 POST /api/ai-explain
@@ -211,7 +241,7 @@ Returns AI-generated natural language summary.
 | DNS Resolution | dnspython |
 | WHOIS Lookup | python-whois |
 | AI Service | Groq API (Llama 3.3 70B) |
-| External APIs | VirusTotal, Google Safe Browsing, URLHaus |
+| External APIs | VirusTotal, Google Safe Browsing, URLHaus, urlscan.io |
 
 ---
 
@@ -222,6 +252,7 @@ Returns AI-generated natural language summary.
 | `GROQ_API_KEY` | AI explanations (starts with `gsk_`) |
 | `VIRUSTOTAL_API_KEY` | File/URL reputation checks |
 | `GOOGLE_SAFE_BROWSING_API_KEY` | Phishing/malware URL detection |
+| `URLSCAN_API_KEY` | Browser sandbox analysis via urlscan.io |
 | `PORT` | Server port (default: 5000) |
 
 ---
@@ -233,6 +264,7 @@ Returns AI-generated natural language summary.
 - **File Size Limit**: 100MB max upload
 - **Temp Files**: Automatically cleaned up after each scan
 - **Timeouts**: URL scanning has 15s overall timeout; individual services 5-10s
+- **URLScan Rate Limits**: Free tier: 1 scan/min, 50/day
 - **CORS**: Currently allows all origins (`*`) - restrict for production
 - **No Authentication**: Add API key validation if exposing publicly
 - **Rate Limiting**: Consider Flask-Limiter for abuse prevention
@@ -241,9 +273,9 @@ Returns AI-generated natural language summary.
 
 ## Limitations
 
-1. **Static Analysis Only** – No dynamic execution or sandboxing
+1. **Static Analysis Only** – No dynamic execution or sandboxing (except urlscan.io for URLs)
 2. **YARA Dependency** – Effectiveness depends on rule quality
-3. **API Rate Limits** – VirusTotal (4/min free), Groq (varies by plan)
+3. **API Rate Limits** – VirusTotal (4/min free), Groq (varies by plan), urlscan.io (50/day free)
 4. **APK Analysis** – AndroGuard may struggle with heavily obfuscated APKs
 5. **No Persistence** – Scan results not stored; stateless design
 
