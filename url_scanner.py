@@ -698,6 +698,45 @@ def submit_urlscan(url: str) -> Dict[str, Any]:
 
 
 def get_urlscan_result(scan_id: str) -> Dict[str, Any]:
-    """Get urlscan.io result"""
+    """Get urlscan.io result AND run regular scan, then merge them"""
     scanner = URLScanIOScanner()
-    return scanner.get_result(scan_id)
+    urlscan_result = scanner.get_result(scan_id)
+    
+    # If urlscan completed successfully, also run regular scan
+    if urlscan_result.get('success') and urlscan_result.get('status') == 'completed':
+        url = urlscan_result.get('url', '')
+        if url:
+            try:
+                # Run regular scan too
+                regular_scanner = URLScanner()
+                regular_data = regular_scanner.analyze_url(url)
+                
+                # Merge: urlscan data takes priority, but include regular scan services
+                urlscan_result['services'] = {
+                    **regular_data.get('services', {}),
+                    'urlscan_io': {
+                        'available': True,
+                        'scanned': True,
+                        'result_url': f"https://urlscan.io/result/{scan_id}/"
+                    }
+                }
+                
+                # Add any additional findings from regular scan
+                existing_types = {f.get('type') for f in urlscan_result.get('findings', [])}
+                for finding in regular_data.get('findings', []):
+                    if finding.get('type') not in existing_types:
+                        urlscan_result['findings'].append(finding)
+                
+                # Recalculate threat score (take max of both)
+                urlscan_result['threat_score'] = max(
+                    urlscan_result.get('threat_score', 0),
+                    regular_data.get('threat_score', 0)
+                )
+                
+                # Update explanation to mention both
+                urlscan_result['explanation'] += f"\n\nAlso checked: Google Safe Browsing, URLHaus, VirusTotal, SSL cert, DNS records."
+                
+            except Exception as e:
+                logger.warning(f"[URLSCAN] Could not run regular scan: {e}")
+    
+    return urlscan_result
