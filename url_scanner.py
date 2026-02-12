@@ -663,30 +663,30 @@ class URLScanIOScanner:
         }
     
     def _generate_explanation(self, findings, verdicts, network_stats, domain):
-        """Generate human-readable explanation"""
+        """Generate human-readable explanation - ZeroRisk Sentinel branded"""
         parts = []
         
         if verdicts.get("malicious"):
-            parts.append("urlscan.io's sandbox detected malicious behavior on this page.")
+            parts.append("ZeroRisk Sentinel Deep Scan detected malicious behavior during live browser analysis.")
         
         if verdicts.get("suspicious"):
-            parts.append("Suspicious patterns were observed during browser analysis.")
+            parts.append("Suspicious patterns were observed during sandboxed browser execution.")
         
         phishing = verdicts.get("phishing", [])
         if phishing:
             brands = ", ".join([p.get("brand", "unknown") for p in phishing])
-            parts.append(f"Possible impersonation of: {brands}")
+            parts.append(f"Possible impersonation detected: {brands}")
         
-        parts.append(f"\nNetwork Activity:")
-        parts.append(f"• Made {network_stats['total_requests']} network requests")
-        parts.append(f"• Contacted {network_stats['unique_domains']} unique domains")
+        parts.append(f"\n📊 Sandbox Network Activity:")
+        parts.append(f"• {network_stats['total_requests']} total network requests")
+        parts.append(f"• {network_stats['unique_domains']} unique domains contacted")
         parts.append(f"• {network_stats['suspicious_domains']} requests to suspicious domains")
         
         if findings:
-            parts.append(f"\nDetected {len(findings)} security indicator(s).")
+            parts.append(f"\n🚨 {len(findings)} security indicator(s) detected.")
         
-        parts.append(f"\nDomain: {domain}")
-        parts.append(f"\n(Deep scan via urlscan.io sandbox - actual browser execution)")
+        parts.append(f"\n🌐 Target: {domain}")
+        parts.append(f"\n✅ Deep Scan Complete - ZeroRisk Sentinel Sandbox Analysis")
         
         return "\n".join(parts)
 
@@ -734,7 +734,8 @@ def get_urlscan_result(scan_id: str) -> Dict[str, Any]:
                 )
                 
                 # Update explanation to mention both
-                urlscan_result['explanation'] += f"\n\nAlso checked: Google Safe Browsing, URLHaus, VirusTotal, SSL cert, DNS records."
+                                # Update explanation to mention both
+                urlscan_result['explanation'] += f"\n\n🔍 Also checked via Backend Analysis:\n• Google Safe Browsing\n• URLHaus Database\n• VirusTotal (70+ vendors)\n• SSL Certificate\n• DNS Records\n• Domain Age\n• Redirect Chain"
                 
             except Exception as e:
                 logger.warning(f"[URLSCAN] Could not run regular scan: {e}")
