@@ -476,17 +476,33 @@ class URLScanIOScanner:
     
     def _parse_result(self, data: Dict, scan_id: str) -> Dict[str, Any]:
         """Parse urlscan.io result into our format"""
-        page = data.get("page", {})
-        lists = data.get("lists", {})
-        stats = data.get("stats", {})
-        verdicts = data.get("verdicts", {}).get("overall", {})
+        logger.info(f"[URLSCAN] Parsing result for scan {scan_id}")
+        logger.info(f"[URLSCAN] Data keys: {list(data.keys())}")
+        
+        # Safely get nested data
+        page = data.get("page", {}) or {}
+        lists = data.get("lists", {}) or {}
+        stats = data.get("stats", {}) or {}
+        task = data.get("task", {}) or {}
+        data_section = data.get("data", {}) or {}
+        
+        # Verdicts can be structured differently
+        verdicts_section = data.get("verdicts", {}) or {}
+        if isinstance(verdicts_section, dict):
+            verdicts = verdicts_section.get("overall", {}) or {}
+            brands = verdicts_section.get("brands", []) or []
+        else:
+            verdicts = {}
+            brands = []
+        
+        logger.info(f"[URLSCAN] Verdicts: {verdicts}")
         
         score = 0
         findings = []
         
-        brands = data.get("verdicts", {}).get("brands", [])
-        brand_names = [b.get("name", "") for b in brands]
+        brand_names = [b.get("name", "") for b in brands if isinstance(b, dict)]
         
+        # Malicious verdict
         if verdicts.get("malicious"):
             score = 85
             findings.append({
@@ -495,6 +511,7 @@ class URLScanIOScanner:
                 'description': 'urlscan.io flagged this page as malicious'
             })
         
+        # Suspicious verdict
         if verdicts.get("suspicious"):
             score = max(score, 60)
             findings.append({
@@ -503,19 +520,22 @@ class URLScanIOScanner:
                 'description': 'Suspicious behavior detected in sandbox'
             })
         
-        phishing = verdicts.get("phishing", [])
+        # Phishing detection
+        phishing = verdicts.get("phishing", []) if isinstance(verdicts.get("phishing"), list) else []
         if phishing:
             score = max(score, 70)
             for phish in phishing:
-                findings.append({
-                    'type': 'phishing_detected',
-                    'severity': 'high',
-                    'description': f"Detected possible {phish.get('brand', 'brand')} impersonation"
-                })
+                if isinstance(phish, dict):
+                    findings.append({
+                        'type': 'phishing_detected',
+                        'severity': 'high',
+                        'description': f"Detected possible {phish.get('brand', 'brand')} impersonation"
+                    })
         
+        # Brand impersonation check
         if brands:
             for brand in brands:
-                if brand.get("detection") == "impersonation":
+                if isinstance(brand, dict) and brand.get("detection") == "impersonation":
                     score = max(score, 65)
                     findings.append({
                         'type': 'brand_impersonation',
@@ -523,13 +543,15 @@ class URLScanIOScanner:
                         'description': f"Page tried to impersonate {brand.get('name', 'a brand')}"
                     })
         
-        ip = page.get("ip", "unknown")
-        asn = page.get("asn", {})
-        server = page.get("server", "unknown")
-        country = page.get("country", "unknown")
-        domain = page.get("domain", "unknown")
+        # Page info
+        ip = page.get("ip", "unknown") if isinstance(page, dict) else "unknown"
+        asn = page.get("asn", {}) if isinstance(page, dict) else {}
+        server = page.get("server", "unknown") if isinstance(page, dict) else "unknown"
+        country = page.get("country", "unknown") if isinstance(page, dict) else "unknown"
+        domain = page.get("domain", "unknown") if isinstance(page, dict) else "unknown"
         
-        resources = lists.get("urls", [])
+        # Resource analysis
+        resources = lists.get("urls", []) if isinstance(lists, dict) else []
         suspicious_domains = []
         
         for res in resources:
@@ -547,20 +569,35 @@ class URLScanIOScanner:
                 'description': f"Page loaded resources from {len(suspicious_domains)} suspicious domain(s)"
             })
         
+        # Network stats
+        domains_list = lists.get("domains", []) if isinstance(lists, dict) else []
+        ips_list = lists.get("ips", []) if isinstance(lists, dict) else []
+        certs_list = lists.get("certificates", []) if isinstance(lists, dict) else []
+        asns_list = lists.get("asns", []) if isinstance(lists, dict) else []
+        
         network_stats = {
             'total_requests': len(resources),
             'suspicious_domains': len(suspicious_domains),
-            'unique_domains': len(lists.get("domains", [])),
-            'unique_ips': len(lists.get("ips", [])),
-            'certificates': len(lists.get("certificates", [])),
-            'asns': len(lists.get("asns", []))
+            'unique_domains': len(domains_list),
+            'unique_ips': len(ips_list),
+            'certificates': len(certs_list),
+            'asns': len(asns_list)
         }
         
-        console = data.get("data", {}).get("console", [])
-        dom_hash = data.get("data", {}).get("dom", {}).get("hash", "")
-        meta_tags = page.get("meta", {})
-        screenshot = data.get("task", {}).get("screenshotURL", "")
+        # Console logs
+        console = data_section.get("console", []) if isinstance(data_section, dict) else []
         
+        # DOM hash
+        dom_section = data_section.get("dom", {}) if isinstance(data_section, dict) else {}
+        dom_hash = dom_section.get("hash", "") if isinstance(dom_section, dict) else ""
+        
+        # Meta tags
+        meta_tags = page.get("meta", {}) if isinstance(page, dict) else {}
+        
+        # Screenshot
+        screenshot = task.get("screenshotURL", "") if isinstance(task, dict) else ""
+        
+        # Determine final threat level
         threat_level = 'safe'
         if score >= 80:
             threat_level = 'critical'
@@ -571,10 +608,11 @@ class URLScanIOScanner:
         elif score > 0:
             threat_level = 'low'
         
+        # Generate explanation
         explanation = self._generate_explanation(findings, verdicts, network_stats, domain)
         
         return {
-            'url': page.get("url", ""),
+            'url': page.get("url", "") if isinstance(page, dict) else "",
             'domain': domain,
             'scan_time': datetime.utcnow().isoformat(),
             'threat_score': score,
@@ -592,14 +630,14 @@ class URLScanIOScanner:
                 'country': country,
                 'server': server,
                 'asn': {
-                    'asn': asn.get("asn"),
-                    'name': asn.get("name"),
-                    'country': asn.get("country")
+                    'asn': asn.get("asn") if isinstance(asn, dict) else None,
+                    'name': asn.get("name") if isinstance(asn, dict) else None,
+                    'country': asn.get("country") if isinstance(asn, dict) else None
                 },
                 'brands_detected': brand_names,
                 'verdicts': {
-                    'malicious': verdicts.get("malicious", False),
-                    'suspicious': verdicts.get("suspicious", False),
+                    'malicious': verdicts.get("malicious", False) if isinstance(verdicts, dict) else False,
+                    'suspicious': verdicts.get("suspicious", False) if isinstance(verdicts, dict) else False,
                     'phishing': len(phishing) > 0,
                     'phishing_details': phishing
                 },
@@ -609,10 +647,10 @@ class URLScanIOScanner:
                 'console_logs': console[:10] if console else [],
                 'dom_hash': dom_hash,
                 'meta': meta_tags,
-                'links': lists.get("links", [])[:10],
+                'links': lists.get("links", [])[:10] if isinstance(lists, dict) else [],
                 'hashes': {
                     'dom': dom_hash,
-                    'requests': stats.get("resourceStats", {})
+                    'requests': stats.get("resourceStats", {}) if isinstance(stats, dict) else {}
                 }
             },
             'services': {
