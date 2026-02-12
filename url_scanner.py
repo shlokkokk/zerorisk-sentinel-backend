@@ -447,18 +447,28 @@ class URLScanIOScanner:
             return {'success': False, 'error': str(e)}
     
     def get_result(self, scan_id: str) -> Dict[str, Any]:
-        """Poll urlscan.io for scan results"""
+        """Poll urlscan.io for scan results with better error handling"""
         try:
             response = self.session.get(
                 f"{self.base_url}/result/{scan_id}/",
                 timeout=15
             )
             
+            # 404 = still processing
             if response.status_code == 404:
                 return {
                     'success': True,
                     'status': 'pending',
                     'message': 'Scan still in progress'
+                }
+            
+            # 500/502/503 = urlscan.io having issues, treat as pending
+            if response.status_code in [500, 502, 503, 504]:
+                logger.warning(f"[URLSCAN] urlscan.io returned {response.status_code}, treating as pending")
+                return {
+                    'success': True,
+                    'status': 'pending',
+                    'message': f'urlscan.io temporarily unavailable ({response.status_code}), retrying...'
                 }
             
             response.raise_for_status()
@@ -470,9 +480,20 @@ class URLScanIOScanner:
             
             return parsed
             
+        except requests.exceptions.Timeout:
+            return {
+                'success': True,
+                'status': 'pending',
+                'message': 'Request timed out, retrying...'
+            }
         except Exception as e:
             logger.error(f"[URLSCAN] Result error: {e}")
-            return {'success': False, 'error': str(e)}
+            # Don't fail completely - return pending so polling continues
+            return {
+                'success': True,
+                'status': 'pending',
+                'message': 'Error fetching result, retrying...'
+            }
     
     def _parse_result(self, data: Dict, scan_id: str) -> Dict[str, Any]:
         """Parse urlscan.io result into our format"""
