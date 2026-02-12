@@ -23,3 +23,6 @@ requests
 
 dnspython>=2.3.0
 python-whois>=0.8.0
+
+# URLScan.io Integration
+urlscanio>=1.0.0

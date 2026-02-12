@@ -304,7 +304,43 @@ def ai_explain():
             "error": "Internal server error"
         }), 500
 
+#urlscan endpoint
+@app.route('/api/urlscan/submit', methods=['POST'])
+def urlscan_submit():
+    """Submit URL to urlscan.io sandbox"""
+    try:
+        from url_scanner import submit_urlscan
+        
+        data = request.get_json()
+        if not data or 'url' not in data:
+            return jsonify({'success': False, 'error': 'No URL provided'}), 400
+        
+        url = data['url']
+        logger.info(f"[URLSCAN] Submitting: {url}")
+        
+        result = submit_urlscan(url)
+        return jsonify(result), 200 if result.get('success') else 500
+        
+    except Exception as e:
+        logger.error(f"[URLSCAN] Submit error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
 
+
+@app.route('/api/urlscan/result/<scan_id>', methods=['GET'])
+def urlscan_result(scan_id):
+    """Get urlscan.io scan result"""
+    try:
+        from url_scanner import get_urlscan_result
+        
+        logger.info(f"[URLSCAN] Polling result: {scan_id}")
+        
+        result = get_urlscan_result(scan_id)
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"[URLSCAN] Result error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+    
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)

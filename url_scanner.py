@@ -9,6 +9,7 @@ import socket
 import requests
 import logging
 import base64
+import time
 from typing import Dict, Any
 from urllib.parse import urlparse
 from datetime import datetime
@@ -372,3 +373,293 @@ class URLScanner:
 def scan_url(url: str) -> Dict[str, Any]:
     scanner = URLScanner()
     return scanner.analyze_url(url)
+
+#new stuff added starts here
+URLSCAN_API_KEY = os.getenv("URLSCAN_API_KEY", "")
+
+class URLScanIOScanner:
+    """urlscan.io sandbox scanner for deep URL analysis"""
+    
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'ZeroRisk-Sentinel/1.0',
+            'API-Key': URLSCAN_API_KEY
+        })
+        self.base_url = "https://urlscan.io/api/v1"
+    
+    def submit_scan(self, url: str, public: bool = True) -> Dict[str, Any]:
+        """Submit URL to urlscan.io for sandbox analysis"""
+        if not URLSCAN_API_KEY:
+            return {
+                'success': False,
+                'error': 'URLSCAN_API_KEY not configured',
+                'note': 'Get free API key from urlscan.io'
+            }
+        
+        try:
+            payload = {
+                "url": url,
+                "public": "on" if public else "off",
+                "tags": ["zerorisk-sentinel", "security-scan"]
+            }
+            
+            response = self.session.post(
+                f"{self.base_url}/scan/",
+                headers={"API-Key": URLSCAN_API_KEY},
+                json=payload,
+                timeout=30
+            )
+            
+            if response.status_code == 400:
+                data = response.json()
+                if "message" in data and "already" in data["message"].lower():
+                    return {
+                        'success': True,
+                        'scan_id': data.get("uuid", ""),
+                        'message': 'Scan already exists, using existing result',
+                        'existing': True
+                    }
+                return {'success': False, 'error': data.get('message', 'Bad request')}
+            
+            if response.status_code == 429:
+                return {
+                    'success': False,
+                    'error': 'Rate limit exceeded. urlscan.io free tier: 1 scan/min, 50/day',
+                    'rate_limited': True
+                }
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            return {
+                'success': True,
+                'scan_id': data.get("uuid"),
+                'api_url': data.get("api"),
+                'result_url': data.get("result"),
+                'message': 'Scan submitted successfully'
+            }
+            
+        except requests.exceptions.Timeout:
+            return {'success': False, 'error': 'Request timed out'}
+        except Exception as e:
+            logger.error(f"[URLSCAN] Submit error: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def get_result(self, scan_id: str) -> Dict[str, Any]:
+        """Poll urlscan.io for scan results"""
+        try:
+            response = self.session.get(
+                f"{self.base_url}/result/{scan_id}/",
+                timeout=15
+            )
+            
+            if response.status_code == 404:
+                return {
+                    'success': True,
+                    'status': 'pending',
+                    'message': 'Scan still in progress'
+                }
+            
+            response.raise_for_status()
+            data = response.json()
+            
+            parsed = self._parse_result(data, scan_id)
+            parsed['success'] = True
+            parsed['status'] = 'completed'
+            
+            return parsed
+            
+        except Exception as e:
+            logger.error(f"[URLSCAN] Result error: {e}")
+            return {'success': False, 'error': str(e)}
+    
+    def _parse_result(self, data: Dict, scan_id: str) -> Dict[str, Any]:
+        """Parse urlscan.io result into our format"""
+        page = data.get("page", {})
+        lists = data.get("lists", {})
+        stats = data.get("stats", {})
+        verdicts = data.get("verdicts", {}).get("overall", {})
+        
+        score = 0
+        findings = []
+        
+        brands = data.get("verdicts", {}).get("brands", [])
+        brand_names = [b.get("name", "") for b in brands]
+        
+        if verdicts.get("malicious"):
+            score = 85
+            findings.append({
+                'type': 'malicious_verdict',
+                'severity': 'critical',
+                'description': 'urlscan.io flagged this page as malicious'
+            })
+        
+        if verdicts.get("suspicious"):
+            score = max(score, 60)
+            findings.append({
+                'type': 'suspicious_verdict',
+                'severity': 'high',
+                'description': 'Suspicious behavior detected in sandbox'
+            })
+        
+        phishing = verdicts.get("phishing", [])
+        if phishing:
+            score = max(score, 70)
+            for phish in phishing:
+                findings.append({
+                    'type': 'phishing_detected',
+                    'severity': 'high',
+                    'description': f"Detected possible {phish.get('brand', 'brand')} impersonation"
+                })
+        
+        if brands:
+            for brand in brands:
+                if brand.get("detection") == "impersonation":
+                    score = max(score, 65)
+                    findings.append({
+                        'type': 'brand_impersonation',
+                        'severity': 'high',
+                        'description': f"Page tried to impersonate {brand.get('name', 'a brand')}"
+                    })
+        
+        ip = page.get("ip", "unknown")
+        asn = page.get("asn", {})
+        server = page.get("server", "unknown")
+        country = page.get("country", "unknown")
+        domain = page.get("domain", "unknown")
+        
+        resources = lists.get("urls", [])
+        suspicious_domains = []
+        
+        for res in resources:
+            if isinstance(res, dict):
+                res_domain = res.get("domain", "")
+                if any(tld in res_domain for tld in ['.xyz', '.tk', '.ml', '.ga', '.cf', '.top']):
+                    if res_domain not in suspicious_domains:
+                        suspicious_domains.append(res_domain)
+        
+        if suspicious_domains:
+            score = max(score, 40)
+            findings.append({
+                'type': 'suspicious_resources',
+                'severity': 'medium',
+                'description': f"Page loaded resources from {len(suspicious_domains)} suspicious domain(s)"
+            })
+        
+        network_stats = {
+            'total_requests': len(resources),
+            'suspicious_domains': len(suspicious_domains),
+            'unique_domains': len(lists.get("domains", [])),
+            'unique_ips': len(lists.get("ips", [])),
+            'certificates': len(lists.get("certificates", [])),
+            'asns': len(lists.get("asns", []))
+        }
+        
+        console = data.get("data", {}).get("console", [])
+        dom_hash = data.get("data", {}).get("dom", {}).get("hash", "")
+        meta_tags = page.get("meta", {})
+        screenshot = data.get("task", {}).get("screenshotURL", "")
+        
+        threat_level = 'safe'
+        if score >= 80:
+            threat_level = 'critical'
+        elif score >= 60:
+            threat_level = 'high'
+        elif score >= 30:
+            threat_level = 'medium'
+        elif score > 0:
+            threat_level = 'low'
+        
+        explanation = self._generate_explanation(findings, verdicts, network_stats, domain)
+        
+        return {
+            'url': page.get("url", ""),
+            'domain': domain,
+            'scan_time': datetime.utcnow().isoformat(),
+            'threat_score': score,
+            'threat_level': threat_level,
+            'findings': findings,
+            'explanation': explanation,
+            'backend_based': True,
+            'deep_scan': True,
+            'urlscan_data': {
+                'scan_id': scan_id,
+                'scan_url': f"https://urlscan.io/result/{scan_id}/",
+                'screenshot': screenshot,
+                'screenshot_thumb': screenshot,
+                'ip': ip,
+                'country': country,
+                'server': server,
+                'asn': {
+                    'asn': asn.get("asn"),
+                    'name': asn.get("name"),
+                    'country': asn.get("country")
+                },
+                'brands_detected': brand_names,
+                'verdicts': {
+                    'malicious': verdicts.get("malicious", False),
+                    'suspicious': verdicts.get("suspicious", False),
+                    'phishing': len(phishing) > 0,
+                    'phishing_details': phishing
+                },
+                'network_stats': network_stats,
+                'suspicious_domains': suspicious_domains,
+                'resources_loaded': resources[:20] if resources else [],
+                'console_logs': console[:10] if console else [],
+                'dom_hash': dom_hash,
+                'meta': meta_tags,
+                'links': lists.get("links", [])[:10],
+                'hashes': {
+                    'dom': dom_hash,
+                    'requests': stats.get("resourceStats", {})
+                }
+            },
+            'services': {
+                'urlscan_io': {
+                    'available': True,
+                    'scanned': True,
+                    'result_url': f"https://urlscan.io/result/{scan_id}/"
+                }
+            }
+        }
+    
+    def _generate_explanation(self, findings, verdicts, network_stats, domain):
+        """Generate human-readable explanation"""
+        parts = []
+        
+        if verdicts.get("malicious"):
+            parts.append("urlscan.io's sandbox detected malicious behavior on this page.")
+        
+        if verdicts.get("suspicious"):
+            parts.append("Suspicious patterns were observed during browser analysis.")
+        
+        phishing = verdicts.get("phishing", [])
+        if phishing:
+            brands = ", ".join([p.get("brand", "unknown") for p in phishing])
+            parts.append(f"Possible impersonation of: {brands}")
+        
+        parts.append(f"\nNetwork Activity:")
+        parts.append(f"• Made {network_stats['total_requests']} network requests")
+        parts.append(f"• Contacted {network_stats['unique_domains']} unique domains")
+        parts.append(f"• {network_stats['suspicious_domains']} requests to suspicious domains")
+        
+        if findings:
+            parts.append(f"\nDetected {len(findings)} security indicator(s).")
+        
+        parts.append(f"\nDomain: {domain}")
+        parts.append(f"\n(Deep scan via urlscan.io sandbox - actual browser execution)")
+        
+        return "\n".join(parts)
+
+
+def submit_urlscan(url: str) -> Dict[str, Any]:
+    """Submit URL to urlscan.io"""
+    scanner = URLScanIOScanner()
+    return scanner.submit_scan(url)
+
+
+def get_urlscan_result(scan_id: str) -> Dict[str, Any]:
+    """Get urlscan.io result"""
+    scanner = URLScanIOScanner()
+    return scanner.get_result(scan_id)
