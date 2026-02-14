@@ -340,7 +340,131 @@ def urlscan_result(scan_id):
     except Exception as e:
         logger.error(f"[URLSCAN] Result error: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# SANDBOX FILE SCAN ENDPOINTS
+@app.route('/api/sandbox/submit', methods=['POST'])
+def sandbox_submit():
+    """Submit file to Hybrid Analysis sandbox for deep scanning"""
+    try:
+        from sandbox_scanner import submit_to_sandbox
+        
+        if 'file' not in request.files:
+            return jsonify({'success': False, 'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({'success': False, 'error': 'Empty filename'}), 400
+        
+        filename = secure_filename(file.filename)
+        tmp_dir = tempfile.mkdtemp()
+        tmp_path = os.path.join(tmp_dir, f"{uuid.uuid4()}_{filename}")
+        
+        file.save(tmp_path)
+        
+        logger.info(f"[SANDBOX] Submitting {filename} to Hybrid Analysis")
+        result = submit_to_sandbox(tmp_path, filename)
+        
+        # Cleanup
+        try:
+            os.remove(tmp_path)
+            os.rmdir(tmp_dir)
+        except:
+            pass
+        
+        return jsonify(result), 200 if result.get('success') else 500
+        
+    except Exception as e:
+        logger.error(f"[SANDBOX] Submit error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/sandbox/result/<job_id>', methods=['GET'])
+def sandbox_result(job_id):
+    """Get Hybrid Analysis sandbox result AND merge with regular scan"""
+    try:
+        from sandbox_scanner import get_sandbox_result
+        from file_scanner import scan_file, get_scanner
+        
+        logger.info(f"[SANDBOX] Polling result: {job_id}")
+        
+        sandbox_data = get_sandbox_result(job_id)
+        
+        # If sandbox completed, we need to also run the regular scan
+        # But we don't have the file anymore, so we return sandbox-only data
+        # The frontend will handle merging if it has the regular scan cached
+        
+        return jsonify(sandbox_data), 200
+        
+    except Exception as e:
+        logger.error(f"[SANDBOX] Result error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/scan-file-deep', methods=['POST'])
+def scan_file_deep_endpoint():
+    """
+    DEEP FILE SCAN: Regular scan + submit to sandbox
+    Returns regular results immediately with sandbox job_id for polling
+    """
+    if not FILE_SCANNER_AVAILABLE:
+        return jsonify({
+            "success": False,
+            "error": "File scanner not available"
+        }), 503
     
+    if 'file' not in request.files:
+        return jsonify({"success": False, "error": "No file part"}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({"success": False, "error": "No selected file"}), 400
+    
+    filename = secure_filename(file.filename)
+    tmp_dir = tempfile.mkdtemp()
+    tmp_path = os.path.join(tmp_dir, f"{uuid.uuid4()}_{filename}")
+    
+    try:
+        # Save file
+        file.save(tmp_path)
+        logger.info(f"[DEEP-SCAN] Starting deep scan of: {filename}")
+        
+        #  Run regular scan first
+        from file_scanner import scan_file
+        regular_result = scan_file(tmp_path, filename)
+        
+        #  Submit to sandbox
+        from sandbox_scanner import submit_to_sandbox
+        sandbox_submit_result = submit_to_sandbox(tmp_path, filename)
+        
+        # Combine results
+        response = {
+            "success": True,
+            "regular_scan": regular_result,
+            "sandbox": sandbox_submit_result
+        }
+        
+        # If sandbox submission failed, still return regular scan
+        if not sandbox_submit_result.get('success'):
+            response['sandbox_error'] = sandbox_submit_result.get('error')
+        
+        return jsonify(response), 200
+        
+    except Exception as e:
+        logger.error(f"[DEEP-SCAN] ERROR: {e}")
+        return jsonify({
+            "success": False,
+            "error": f"Deep scan failed: {str(e)}"
+        }), 500
+        
+    finally:
+        # Cleanup
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            if os.path.exists(tmp_dir):
+                os.rmdir(tmp_dir)
+        except Exception as cleanup_error:
+            logger.warning(f"[DEEP-SCAN] Cleanup error: {cleanup_error}")
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
