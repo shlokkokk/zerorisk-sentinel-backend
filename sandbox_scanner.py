@@ -29,7 +29,7 @@ class HybridAnalysisScanner:
             "User-Agent": "Falcon Sandbox",
             "Accept": "application/json"
         })
-        # Use the correct Hybrid Analysis API endpoint
+
         self.base_url = "https://www.hybrid-analysis.com/api/v2"
     
     def submit_file(self, filepath: str, filename: str) -> Dict[str, Any]:
