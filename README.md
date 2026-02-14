@@ -1,297 +1,516 @@
-# ZeroRisk Sentinel - Backend
+# ZeroRisk Sentinel Backend
 
-A Python Flask backend that powers ZeroRisk Sentinel's advanced threat detection capabilities. Provides YARA-based malware scanning, VirusTotal integration, URL threat intelligence with optional browser sandbox analysis via urlscan.io, and AI-powered analysis explanations.
+A comprehensive cybersecurity analysis API built with Flask, integrating multiple threat intelligence engines, static analysis tools, and AI-powered security explanations. This backend powers ZeroRisk Sentinel's file scanning, APK analysis, URL assessment, and sandbox detonation capabilities.
 
-**Created by Shlok Shah**
-
----
-
-## Overview
-
-This backend extends the frontend's capabilities with server-side analysis that would be impractical or impossible in a browser. It handles file hashing, YARA rule compilation, external API queries, LLM-based explanations, and live browser sandboxing for URLs.
+**Developed by Shlok Shah**
 
 ---
 
-## Backend Structure
+## Project Overview
 
-```
-├── server.py           # Flask app with CORS, route handlers
-├── file_scanner.py     # YARA rules, entropy, hashes, VirusTotal
-├── url_scanner.py      # Multi-source URL threat intelligence + urlscan.io
-├── apk_analyzer.py     # Android APK permission analysis
-├── ai_explainer.py     # Groq API integration for explanations
-├── requirements.txt    # Python dependencies
-└── start.sh            # Launch script
-```
+This backend serves as the intelligence layer for ZeroRisk Sentinel, providing enterprise-grade malware detection and threat analysis through a RESTful API. The system combines static analysis techniques with third-party threat intelligence feeds to deliver comprehensive security assessments.
+
+The architecture implements a multi-layered detection approach, utilizing YARA signature matching, entropy analysis, file type verification, hash-based reputation lookups, and optional behavioral analysis through cloud sandboxing. An AI explanation engine synthesizes findings into actionable security insights.
 
 ---
 
-## How It Works
+## System Architecture
 
-### Request Flow
+### Technology Stack
+
+| Component | Implementation |
+|-----------|----------------|
+| **Web Framework** | Flask 3.x with CORS middleware |
+| **Malware Detection** | YARA rules engine, python-magic file typing |
+| **Threat Intel APIs** | VirusTotal, Google Safe Browsing, URLhaus, urlscan.io |
+| **Sandbox Integration** | Hybrid Analysis API for behavioral detonation |
+| **AI Processing** | Groq API with llama-3.3-70b-versatile model |
+| **APK Analysis** | androguard for Android package parsing |
+| **Network Analysis** | dnspython for DNS resolution, python-whois |
+
+### Project Structure
 
 ```
-Frontend Request
-      │
-      ▼
-┌─────────────┐
-│ Flask Server│
-└──────┬──────┘
-       │
-       ├──► File? ──► file_scanner.py
-       │               ├── YARA compilation
-       │               ├── Hash calculation (MD5, SHA1, SHA256)
-       │               ├── Entropy analysis
-       │               └── VirusTotal lookup
-       │
-       ├──► URL? ───► url_scanner.py
-       │               ├── Google Safe Browsing
-       │               ├── URLHaus
-       │               ├── VirusTotal URL
-       │               ├── SSL certificate analysis
-       │               ├── DNS/WHOIS checks
-       │               └── urlscan.io (Deep Scan sandbox)
-       │
-       ├──► APK? ───► apk_analyzer.py
-       │               ├── AndroGuard parsing
-       │               ├── Permission risk scoring
-       │               └── Merged file scanner results
-       │
-       └──► AI? ────► ai_explainer.py
-                       └── Groq API (Llama 3.3 70B)
+zerorisk-sentinel-backend/
+├── server.py               # Flask API server with endpoint definitions
+├── file_scanner.py         # File malware detection engine
+├── apk_analyzer.py         # Android package security analysis
+├── url_scanner.py          # URL threat assessment system
+├── sandbox_scanner.py      # Hybrid Analysis integration layer
+├── ai_explainer.py         # Groq-powered security explanations
+├── requirements.txt        # Python dependency specifications
+├── yara_rules/            # YARA malware signature database
+│   ├── ransomware.yar
+│   ├── trojans.yar
+│   ├── keylogger.yar
+│   ├── packers.yar
+│   └── android_malware_apk.yar
+└── README.md
 ```
 
 ---
 
-## Main Features
+## Core Capabilities
 
-### File Scanner (`file_scanner.py`)
+### File Malware Scanning
 
-| Feature | Description |
-|---------|-------------|
-| **YARA Rules** | Pattern matching against malware signatures (loads from `yara_rules/` directory) |
-| **Entropy Analysis** | Shannon entropy (0-8 scale) to detect packed/encrypted files |
-| **Cryptographic Hashes** | MD5, SHA1, SHA256 for reputation lookups |
-| **VirusTotal** | Hash-based reputation check against 70+ AV engines |
-| **File Type Detection** | Magic number analysis with extension mismatch detection |
-| **PE Analysis** | Basic Windows executable structure validation |
+The file scanner implements multi-layered static analysis combining signature-based detection with heuristic analysis:
 
-### URL Scanner (`url_scanner.py`)
+**Detection Methods:**
+- YARA rule matching against custom malware signatures
+- Shannon entropy calculation for packer/encryption detection
+- File type verification via magic number analysis
+- Extension spoofing detection
+- Cryptographic hash generation (MD5, SHA1, SHA256)
+- VirusTotal hash reputation lookup
 
-| Feature | Description |
-|---------|-------------|
-| **Google Safe Browsing** | Real-time phishing/malware URL checks |
-| **URLHaus** | Malware distribution URL database |
-| **VirusTotal URL** | Multi-engine URL reputation |
-| **DNS Analysis** | A/MX/TXT records, SPF detection |
-| **SSL Certificate** | Validity, expiry, self-signed detection |
-| **Redirect Chain** | Follows up to 5 redirects |
-| **Domain Age** | WHOIS-based registration analysis |
-| **Heuristics** | IP URLs, shorteners, phishing keywords, risky TLDs |
-| **Deep Scan (urlscan.io)** | Live browser sandbox analysis with screenshots, network monitoring |
+**YARA Rule Categories:**
+- Ransomware encryption patterns
+- Trojan backdoor signatures
+- Keylogger surveillance indicators
+- Executable packer detection
+- Android-specific malware patterns
 
-### URLScan.io Integration (Deep Scan)
+**Entropy Analysis Thresholds:**
+```
+0.0-3.0: Plain text, uncompressed data
+3.0-5.0: Structured code, configuration files
+5.0-7.0: Compressed archives, multimedia
+7.0-8.0: Encrypted/packed executables (high risk)
+```
 
-The Deep Scan feature submits URLs to urlscan.io for live browser sandbox analysis:
+### APK Security Analysis
 
-- **Screenshot capture** of rendered page
-- **Network activity** monitoring (requests, domains, IPs)
-- **Console log** collection
-- **Brand impersonation** detection
-- **Malicious/suspicious verdicts** from sandbox analysis
-- **Server information** extraction (ASN, country, server type)
-- **DOM hash** fingerprinting
+Android package analysis extracts permissions, metadata, and components to calculate risk scores:
 
-### APK Analyzer (`apk_analyzer.py`)
+**Analysis Components:**
+- Permission enumeration and risk classification
+- Package manifest parsing
+- Component cataloging (activities, services, broadcast receivers)
+- Dangerous permission combination detection
+- File hash-based reputation checking
+- Entropy analysis for packed payloads
 
-- **Permission Analysis**: 12 predefined risk rules (SMS access, accessibility services, device admin, etc.)
-- **Risk Scoring**: Weighted scoring (critical=35, high=20, medium=10, low=5)
-- **Metadata Extraction**: Package name, version, SDK levels, activities, services
-- **Permission Combos**: Detects dangerous permission pairs
-- **Merged Intelligence**: Combines with file scanner (hashes, entropy, VirusTotal)
+**Risk Scoring Algorithm:**
+```python
+Critical permissions: +35 points
+High risk permissions: +20 points
+Medium risk: +10 points
+Low risk: +5 points
+Dangerous combinations: +15-25 points
+VirusTotal detections: +20-40 points
+High entropy packing: +10 points
+```
 
-### AI Explainer (`ai_explainer.py`)
+### URL Threat Assessment
 
-- Uses Groq API (Llama 3.3 70B) for natural language summaries
-- Graceful fallback to static explanations if AI unavailable
-- ~100 word briefings from security analyst perspective
-- Explicitly notes static analysis limitations
+Multi-source URL analysis combining reputation databases with heuristic checks:
 
----
+**Integrated Services:**
+- Google Safe Browsing threat database
+- URLhaus malware URL tracker
+- VirusTotal URL reputation
+- DNS record analysis (A, MX, SPF records)
+- SSL certificate validation
+- HTTP redirect chain analysis
+- WHOIS domain age lookup
 
-## Detection & Analysis Logic
+**Heuristic Detection:**
+- IP address-based URLs
+- URL shortening service detection
+- Phishing keyword patterns
+- High-risk TLD identification
+- Excessive path length analysis
 
-### Threat Scoring (0-100)
+### Sandbox Behavioral Analysis
 
-**File Scanner:**
-- YARA matches: +15 per match
-- High severity findings: +10 each
-- Medium severity: +5 each
-- Entropy >7.5: +20
-- Extension mismatch: +25
-- VirusTotal detections: +3 per engine (max 30)
+Integration with Hybrid Analysis cloud sandbox for runtime detonation:
 
-**URL Scanner:**
-- Google Safe Browsing hit: +40
-- URLHaus listing: +35
-- VirusTotal detections: +5 per engine (max 25)
-- Raw IP in URL: +30
-- URL shortener: +25
-- Phishing keywords: +20
-- Risky TLD: +20
-- No HTTPS: +15
-- urlscan.io malicious verdict: +85
-- urlscan.io suspicious verdict: +60
+**Behavioral Monitoring:**
+- Process creation and injection detection
+- Network communication analysis
+- File system modification tracking
+- Registry manipulation logging
+- MITRE ATT&CK technique mapping
+- Anti-analysis evasion detection
 
-**APK Analyzer:**
-- Critical permissions: +35 each
-- High permissions: +20 each
-- Medium: +10, Low: +5
-- Dangerous combos: +15-25 bonus
-- VirusTotal boost: +20-40 if flagged
+**Supported Environments:**
+- Windows 7/10/11 (32-bit and 64-bit architectures)
+- Android emulator environments
+- Configurable analysis duration and VM selection
 
-### Severity Levels
+### AI-Powered Explanations
 
-| Score | Level |
-|-------|-------|
-| 0-9 | `safe` |
-| 10-29 | `low` |
-| 30-59 | `medium` |
-| 60-79 | `high` |
-| 80-100 | `critical` |
+Natural language security summaries generated via Groq API:
+
+**Capabilities:**
+- Contextual threat analysis
+- Critical indicator prioritization
+- Evidence-based risk assessment
+- Actionable remediation recommendations
+- Static analysis limitation disclosure
+
+**Prompt Engineering:**
+The system employs specialized prompts that enforce analytical rigor, requiring the AI to distinguish between observed indicators and speculative conclusions while maintaining professional security analyst tone.
 
 ---
 
 ## API Endpoints
 
-### Status Check
-```
+### Status Health Check
+
+```http
 GET /api/status
 ```
-Returns backend health, available features, YARA status, and API key configuration.
 
-### File Scanning
-```
+Returns service availability and feature configuration status.
+
+### File Analysis
+
+```http
 POST /api/scan-file
 Content-Type: multipart/form-data
-Body: file (binary)
 ```
-Returns hashes, entropy, YARA matches, file type, VirusTotal results, threat score.
+
+Executes comprehensive static analysis on uploaded files, returning hashes, YARA matches, entropy metrics, file type verification, and VirusTotal results.
+
+### Deep File Scan
+
+```http
+POST /api/scan-file-deep
+Content-Type: multipart/form-data
+```
+
+Combines standard static analysis with sandbox submission, returning immediate static results plus a job ID for behavioral analysis polling.
+
+### Sandbox Result Retrieval
+
+```http
+GET /api/sandbox/result/<job_id>
+```
+
+Polls Hybrid Analysis for completed behavioral analysis results, including process trees, network activity, and MITRE ATT&CK mappings.
 
 ### Hash Lookup
+
+```http
+GET /api/scan-hash/<hash>
 ```
-GET /api/scan-hash/<md5|sha1|sha256>
-```
-Check hash against VirusTotal without uploading file.
+
+Queries VirusTotal reputation database using file hash (MD5/SHA1/SHA256) without file upload.
 
 ### APK Analysis
-```
+
+```http
 POST /api/analyze-apk
 Content-Type: multipart/form-data
-Body: file (binary .apk)
 ```
-Returns permissions, risk scoring, metadata, hashes, VirusTotal results.
 
-### URL Analysis
-```
+Analyzes Android packages for permission risks, component enumeration, and combined file/permission scoring.
+
+### URL Scanning
+
+```http
 POST /api/analyze-url
 Content-Type: application/json
-Body: { "url": "https://example.com" }
 ```
-Returns threat score, findings, external service results, heuristic analysis.
 
-### URLScan.io Deep Scan - Submit
-```
+Checks URL reputation across multiple threat intelligence sources with DNS and SSL analysis.
+
+### URL Sandbox Detonation
+
+```http
 POST /api/urlscan/submit
-Content-Type: application/json
-Body: { "url": "https://example.com" }
-```
-Submits URL to urlscan.io sandbox. Returns scan_id for polling.
-
-### URLScan.io Deep Scan - Get Result
-```
 GET /api/urlscan/result/<scan_id>
 ```
-Polls for sandbox analysis results. Returns screenshot URL, network stats, verdicts, findings.
 
-### AI Explanation
-```
+Submits URLs to browser-based sandbox for screenshot capture, network analysis, and phishing detection.
+
+### AI Explanation Generation
+
+```http
 POST /api/ai-explain
 Content-Type: application/json
-Body: {
-  "analysis_type": "file|url|apk",
-  "target": "filename.exe",
-  "threat_score": 85,
-  "threat_level": "critical",
-  "findings": [...]
-}
 ```
-Returns AI-generated natural language summary.
+
+Generates natural language security analysis from scan results using Groq AI.
 
 ---
 
-## Tech Stack
+## Technical Implementation Details
 
-| Component | Technology |
-|-----------|------------|
-| Framework | Flask + Flask-CORS |
-| APK Analysis | androguard |
-| Malware Signatures | yara-python |
-| File Type Detection | python-magic (libmagic) |
-| DNS Resolution | dnspython |
-| WHOIS Lookup | python-whois |
-| AI Service | Groq API (Llama 3.3 70B) |
-| External APIs | VirusTotal, Google Safe Browsing, URLHaus, urlscan.io |
+### File Scanner Module
+
+**Key Functions:**
+- `calculate_hashes()`: Computes MD5, SHA1, SHA256 using streaming to handle large files
+- `calculate_entropy()`: Shannon entropy calculation on first 1MB of file data
+- `detect_file_type()`: Magic number-based file type identification with fallback
+- `scan_with_yara()`: Parallel YARA rule matching with metadata extraction
+- `check_virustotal()`: Hash-based reputation lookup with 10-second timeout
+- `check_extension_mismatch()`: Extension spoofing detection via type comparison
+
+**YARA Integration:**
+Rules are compiled at server initialization from the `yara_rules/` directory, with automatic namespace assignment per file. Match results include rule name, namespace, tags, and metadata for severity classification.
+
+**Entropy Interpretation:**
+Values above 7.0 trigger high-risk findings, as legitimate executables typically exhibit entropy between 5.0-7.0. Encrypted ransomware and packed malware often exceed 7.5.
+
+### APK Analyzer Module
+
+**Permission Risk Classification:**
+Implemented via regex pattern matching against permission strings:
+
+```python
+PERMISSION_RULES = [
+    {
+        "pattern": r"^android\.permission\.READ_SMS$",
+        "severity": "critical",
+        "reason": "Access to SMS may intercept OTPs"
+    },
+    # ... additional rules
+]
+```
+
+**Combination Heuristics:**
+Specific permission combinations boost risk scores:
+- BIND_ACCESSIBILITY_SERVICE + SYSTEM_ALERT_WINDOW → +25 points
+- RECEIVE_BOOT_COMPLETED + INTERNET → +15 points
+
+These patterns indicate potential overlay attacks or persistent malware.
+
+### URL Scanner Module
+
+**Service Integration Pattern:**
+Each threat intelligence service is wrapped in a try-except block with timeout enforcement, allowing graceful degradation when services are unavailable.
+
+**DNS Analysis:**
+The system queries A, MX, and TXT records to detect:
+- Newly registered domains (DNS propagation issues)
+- Missing mail infrastructure (potential phishing)
+- Lack of SPF records (spoofing vulnerability)
+
+**Redirect Chain Analysis:**
+Follows up to 5 HTTP redirects, detecting:
+- Open redirect exploitation
+- Malicious short URL resolution
+- Territorial redirects to geo-specific threats
+
+### Sandbox Scanner Module
+
+**Submission Workflow:**
+1. File uploaded to temporary storage with UUID naming
+2. Multipart form data constructed with environment ID
+3. Hybrid Analysis API returns job_id for polling
+4. Temporary file deleted immediately after submission
+
+**Result Parsing:**
+The `_parse_report()` function normalizes Hybrid Analysis JSON into ZeroRisk Sentinel's standard schema, mapping their 0-10 threat scale to 0-100 scoring.
+
+**MITRE ATT&CK Extraction:**
+Detected techniques are extracted from the `mitre_attcks` array and cross-referenced with severity classifications to boost threat scores appropriately.
+
+### AI Explainer Module
+
+**Prompt Construction:**
+The `_build_prompt()` function formats scan results into structured context for the AI, explicitly instructing the model to:
+- Prioritize critical indicators
+- Acknowledge static analysis limitations
+- Avoid generic disclaimers
+- Provide actionable insights
+
+**Fallback Mechanism:**
+When Groq API is unavailable, the system returns a structured fallback object with error details, allowing the frontend to display heuristic results instead.
 
 ---
 
-## Environment Variables
+## Security Analysis Workflow
 
-| Variable | Purpose |
-|----------|---------|
-| `GROQ_API_KEY` | AI explanations (starts with `gsk_`) |
-| `VIRUSTOTAL_API_KEY` | File/URL reputation checks |
-| `GOOGLE_SAFE_BROWSING_API_KEY` | Phishing/malware URL detection |
-| `URLSCAN_API_KEY` | Browser sandbox analysis via urlscan.io |
-| `PORT` | Server port (default: 5000) |
+### Standard File Scan Flow
+
+```
+File Upload → Temporary Storage
+     ↓
+Hash Calculation (MD5/SHA1/SHA256)
+     ↓
+File Type Detection (magic numbers)
+     ↓
+Extension Spoofing Check
+     ↓
+Entropy Analysis (first 1MB)
+     ↓
+YARA Rule Matching (all rules)
+     ↓
+VirusTotal Hash Lookup
+     ↓
+Threat Score Aggregation
+     ↓
+Response Generation → Cleanup
+```
+
+### Deep Scan Flow
+
+```
+File Upload → Standard Scan (parallel)
+     ↓                    ↓
+Immediate Results    Sandbox Submit
+     ↓                    ↓
+Return job_id        Hybrid Analysis
+     ↓                    ↓
+Frontend Polling ← Result Ready
+     ↓
+Behavioral Data Merge → Final Report
+```
+
+### URL Analysis Flow
+
+```
+URL Input → Basic Validation
+     ↓
+Parallel Queries:
+  - Google Safe Browsing
+  - URLhaus Database
+  - VirusTotal URL
+  - DNS Resolution
+  - WHOIS Lookup
+  - SSL Certificate Check
+  - Redirect Chain Analysis
+     ↓
+Heuristic Pattern Matching
+     ↓
+Score Aggregation → Response
+```
 
 ---
 
-## Deployment Notes
+## Performance Characteristics
 
-### Production Considerations
+### Rate Limit Handling
 
-- **File Size Limit**: 100MB max upload
-- **Temp Files**: Automatically cleaned up after each scan
-- **Timeouts**: URL scanning has 15s overall timeout; individual services 5-10s
-- **URLScan Rate Limits**: Free tier: 1 scan/min, 50/day
-- **CORS**: Currently allows all origins (`*`) - restrict for production
-- **No Authentication**: Add API key validation if exposing publicly
-- **Rate Limiting**: Consider Flask-Limiter for abuse prevention
+The system implements graceful degradation when API quotas are exhausted:
 
----
+| Service | Free Tier Limit | Handling Strategy |
+|---------|----------------|-------------------|
+| VirusTotal | 500 req/day | Returns null, scan continues |
+| Groq AI | 30 req/min | Fallback to static explanation |
+| Hybrid Analysis | 100 submissions/day | Error message with quota info |
+| urlscan.io | Limited scans | Queueing recommendation |
+| Google Safe Browsing | 10,000 queries/day | Primary service, rarely limited |
 
-## Limitations
+### Timeout Configuration
 
-1. **Static Analysis Only** – No dynamic execution or sandboxing (except urlscan.io for URLs)
-2. **YARA Dependency** – Effectiveness depends on rule quality
-3. **API Rate Limits** – VirusTotal (4/min free), Groq (varies by plan), urlscan.io (50/day free)
-4. **APK Analysis** – AndroGuard may struggle with heavily obfuscated APKs
-5. **No Persistence** – Scan results not stored; stateless design
+All external API calls enforce strict timeouts to prevent request hanging:
+- VirusTotal: 10 seconds
+- Groq AI: 30 seconds
+- Hybrid Analysis: 15 seconds
+- URL services: 15 seconds
+- DNS queries: 5 seconds
 
----
+### File Size Limits
 
-## Possible Improvements
+```python
+MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB
+```
 
-- Dynamic analysis integration (Any.Run, Hybrid Analysis)
-- Redis caching for VirusTotal results
-- Celery/RQ for async processing with webhooks
-- Automated YARA rule updates
-- ML models for unknown malware detection
-- Certificate Transparency log monitoring
-- API key management and usage quotas
-- Prometheus/Grafana metrics
+Larger files are rejected with HTTP 413 to prevent memory exhaustion.
 
 ---
 
-**© ZeroRisk Sentinel - Shlok Shah**
+## Error Handling Strategy
+
+The codebase implements comprehensive exception handling:
+
+**Logging Levels:**
+- `INFO`: Successful operations, scan completions
+- `WARNING`: API unavailability, missing configuration
+- `ERROR`: API failures, YARA compilation errors
+
+**Fallback Chains:**
+1. python-magic file detection → basic header detection
+2. YARA scanning → built-in pattern matching
+3. VirusTotal lookup → entropy-only assessment
+4. Groq AI → static heuristic explanation
+
+**Client Error Responses:**
+All endpoints return structured JSON with `success` boolean and `error` messages, enabling frontend graceful degradation.
+
+---
+
+## Configuration Requirements
+
+The system expects environment variables for external service authentication:
+
+```
+VIRUSTOTAL_API_KEY
+GROQ_API_KEY
+GROQ_MODEL
+GOOGLE_SAFE_BROWSING_API_KEY
+URLSCAN_API_KEY
+HYBRID_ANALYSIS_API_KEY
+```
+
+Missing keys trigger warning logs and disable corresponding features, but the server remains operational with reduced capabilities.
+
+---
+
+## Development Insights
+
+### Design Decisions
+
+**Why Flask over FastAPI:**
+Flask was chosen for its mature ecosystem and synchronous request model, which simplifies integration with blocking I/O operations like file scanning and API calls.
+
+**YARA Rule Organization:**
+Rules are categorized by threat type in separate files to enable selective loading and easier maintenance. Each rule file represents a threat category namespace.
+
+**Entropy as Primary Heuristic:**
+Shannon entropy provides a reliable packed/encrypted executable indicator without requiring execution. Values above 7.0 correlate strongly with malicious intent.
+
+**Sandbox Optional Design:**
+Behavioral analysis requires significant time (20-120 seconds) and quota consumption. The two-tier approach (quick static + optional deep) balances speed with thoroughness.
+
+**AI Explanation Integration:**
+Natural language summaries bridge the gap between technical findings and user comprehension, making threat assessments accessible to non-security professionals.
+
+### Challenges Addressed
+
+**API Rate Limiting:**
+Implemented per-service tracking recommendations (not enforced server-side) and graceful degradation to maintain functionality under quota constraints.
+
+**YARA Compilation Errors:**
+Rule syntax errors could crash the server. Wrapped compilation in try-except with per-file error reporting, allowing partial rule loading.
+
+**Large File Memory Issues:**
+Streaming hash calculation and chunked entropy analysis prevent memory exhaustion when processing 100MB files.
+
+**Sandbox Polling Complexity:**
+Hybrid Analysis requires polling with exponential backoff. The job_id return allows frontend control over polling frequency.
+
+---
+
+## Known Limitations
+
+- **Static Analysis Scope**: Cannot detect runtime polymorphism or VM-aware malware
+- **YARA Signature Lag**: New malware families evade signatures until rules are updated
+- **API Dependency**: Requires internet connectivity for threat intelligence
+- **Heuristic False Positives**: Legitimate packed software triggers encryption warnings
+- **Sandbox Quota**: Free tier limits deep scans to ~3-5 per day per key
+- **Hash Lookup Privacy**: VirusTotal queries may leak file metadata
+
+---
+
+## Future Architecture Considerations
+
+Technical debt and potential enhancements identified:
+
+- Implement Redis caching layer for VirusTotal hash lookups
+- Add WebSocket support for real-time scan progress streaming
+- Integrate machine learning model for zero-day detection
+- Implement asynchronous task queue (Celery) for sandbox submissions
+- Add MongoDB for scan history and analytics
+- Create Docker containerization for simplified deployment
+- Implement API key rotation and secret management integration
+- Add Prometheus metrics exporter for monitoring
+
+---
+
+**Developed by Shlok Shah**
