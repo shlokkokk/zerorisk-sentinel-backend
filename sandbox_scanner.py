@@ -26,9 +26,10 @@ class HybridAnalysisScanner:
         self.session = requests.Session()
         self.session.headers.update({
             "api-key": HYBRID_ANALYSIS_API_KEY,
-            "User-Agent": "ZeroRisk-Sentinel/1.0",
+            "User-Agent": "Falcon Sandbox",
             "Accept": "application/json"
         })
+        # Use the correct Hybrid Analysis API endpoint
         self.base_url = "https://www.hybrid-analysis.com/api/v2"
     
     def submit_file(self, filepath: str, filename: str) -> Dict[str, Any]:
@@ -51,23 +52,26 @@ class HybridAnalysisScanner:
             }
         
         try:
-            from requests_toolbelt.multipart.encoder import MultipartEncoder
-            
+            # Read file and submit using multipart form data
             with open(filepath, "rb") as f:
-                encoder = MultipartEncoder({
-                    "file": (filename, f, "application/octet-stream"),
-                    "environment_id": "100",
+                files = {"file": (filename, f, "application/octet-stream")}
+                data = {
+                    "environment_id": "100",  # Windows 7 32-bit
                     "experimental_anti_evasion": "true",
                     "script_logging": "true",
                     "input_sample_tampering": "true"
-                })
+                }
+                
+                logger.info(f"[HYBRID] Submitting {filename} to {self.base_url}/submit/file")
                 
                 response = self.session.post(
                     f"{self.base_url}/submit/file",
-                    data=encoder,
-                    headers={"Content-Type": encoder.content_type},
+                    files=files,
+                    data=data,
                     timeout=60
                 )
+            
+            logger.info(f"[HYBRID] Response status: {response.status_code}")
             
             if response.status_code == 429:
                 return {
@@ -76,12 +80,24 @@ class HybridAnalysisScanner:
                     "rate_limited": True
                 }
             
-            if response.status_code == 400:
-                data = response.json()
+            if response.status_code == 401:
                 return {
                     "success": False,
-                    "error": data.get("message", "Bad request")
+                    "error": "Invalid API key. Check your HYBRID_ANALYSIS_API_KEY"
                 }
+            
+            if response.status_code == 400:
+                try:
+                    data = response.json()
+                    return {
+                        "success": False,
+                        "error": data.get("message", "Bad request")
+                    }
+                except:
+                    return {
+                        "success": False,
+                        "error": f"Bad request: {response.text[:200]}"
+                    }
             
             response.raise_for_status()
             data = response.json()
@@ -96,6 +112,9 @@ class HybridAnalysisScanner:
                 "message": "File submitted to sandbox successfully"
             }
             
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"[HYBRID] HTTP error: {e}")
+            return {"success": False, "error": f"HTTP error: {str(e)}"}
         except Exception as e:
             logger.error(f"[HYBRID] Submit error: {e}")
             return {"success": False, "error": str(e)}

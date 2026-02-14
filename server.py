@@ -68,7 +68,7 @@ def allowed_file(filename):
 
 @app.route('/api/status', methods=['GET'])
 def status():
-    """Updated status endpoint with file scanner info"""
+    """Updated status endpoint with file scanner and sandbox info"""
     scanner = get_scanner() if FILE_SCANNER_AVAILABLE else None
     
     features = ["apk_analysis", "ai_explanation"]
@@ -77,6 +77,12 @@ def status():
         features.append("yara_rules")
         features.append("virustotal")
     
+    # Check sandbox availability
+    hybrid_key = os.getenv("HYBRID_ANALYSIS_API_KEY", "")
+    sandbox_available = bool(hybrid_key)
+    if sandbox_available:
+        features.append("sandbox")
+    
     return jsonify({
         "backend": "online",
         "features": features,
@@ -84,6 +90,11 @@ def status():
             "available": FILE_SCANNER_AVAILABLE,
             "yara_loaded": scanner.yara_rules is not None if scanner else False,
             "virustotal_configured": bool(os.getenv("VIRUSTOTAL_API_KEY", ""))
+        },
+        "sandbox": {
+            "available": sandbox_available,
+            "provider": "hybrid_analysis" if sandbox_available else None,
+            "configured": sandbox_available
         }
     }), 200
 
