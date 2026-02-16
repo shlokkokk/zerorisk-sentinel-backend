@@ -427,16 +427,17 @@ class URLScanner:
                     whois_data = whois_response.json()
                     whois_history = whois_data.get('result', {}).get('items', [])[:3]
                 
+                alexa_rank = data.get('alexa_rank')
                 return {
                     'available': True,
                     'hostname': data.get('hostname'),
-                    'alexa_rank': data.get('alexa_rank'),
+                    'alexa_rank': alexa_rank,
                     'subdomain_count': len(subdomains),
                     'subdomains': subdomains,
                     'has_mx': data.get('current_dns', {}).get('mx', {}).get('value') is not None,
                     'mx_records': [mx.get('host') for mx in data.get('current_dns', {}).get('mx', {}).get('value', [])] if data.get('current_dns', {}).get('mx') else [],
                     'whois_history_count': len(whois_history),
-                    'suspicious': data.get('alexa_rank', 999999) > 1000000 and len(subdomains) > 50
+                    'suspicious': (alexa_rank is not None and alexa_rank > 1000000) and len(subdomains) > 50
                 }
             elif response.status_code == 404:
                 return {'available': True, 'found': False, 'note': 'Domain not found in SecurityTrails'}
