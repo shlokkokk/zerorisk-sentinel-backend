@@ -78,6 +78,8 @@ print(f"VirusTotal: {result['virustotal']['malicious']}/70 flagged")
 | **Google Safe Browsing** | Known malicious URL database |
 | **URLHaus** | Community-driven malware URLs |
 | **VirusTotal URL** | 70+ vendor URL scanning |
+| **AbuseIPDB** | IP reputation & abuse reports |
+| **SecurityTrails** | Domain intelligence & subdomains |
 | **SSL Analysis** | Certificate validation & expiry |
 | **DNS Records** | A, MX, TXT (SPF) lookup |
 | **Redirect Chain** | Follow up to 5 hops |
@@ -205,6 +207,8 @@ URLSCAN_API_KEY=usc_xxx      # URL sandbox
 
 # Optional
 GOOGLE_SAFE_BROWSING_API_KEY=gsb_xxx
+ABUSEIPDB_API_KEY=aidb_xxx   # IP reputation
+SECURITYTRAILS_API_KEY=st_xxx # Domain intelligence
 ```
 
 ---

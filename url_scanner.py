@@ -44,7 +44,15 @@ class URLScanner:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
-
+    def _check_mx_record(self, domain: str) -> bool:
+        """Quick check if domain has MX records"""
+        try:
+            import dns.resolver
+            answers = dns.resolver.resolve(domain, 'MX')
+            return len(answers) > 0
+        except:
+            return False
+        
     def resolve_domain_to_ip(self, domain: str) -> str:
         """Resolve domain name to IP address for AbuseIPDB lookup"""
         try:
@@ -434,7 +442,7 @@ class URLScanner:
                     'alexa_rank': alexa_rank,
                     'subdomain_count': len(subdomains),
                     'subdomains': subdomains,
-                    'has_mx': data.get('current_dns', {}).get('mx', {}).get('value') is not None,
+                    'has_mx': self._check_mx_record(domain),
                     'mx_records': [mx.get('host') for mx in data.get('current_dns', {}).get('mx', {}).get('value', [])] if data.get('current_dns', {}).get('mx') else [],
                     'whois_history_count': len(whois_history),
                     'suspicious': (alexa_rank is not None and alexa_rank > 1000000) and len(subdomains) > 50
