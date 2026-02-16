@@ -606,7 +606,33 @@ class URLScanIOScanner:
         }
         
         # Console logs
-        console = data_section.get("console", []) if isinstance(data_section, dict) else []
+        console = []
+        if isinstance(data_section, dict):
+            raw_console = data_section.get("console", [])
+            if isinstance(raw_console, list):
+                for entry in raw_console:
+                    if isinstance(entry, dict):
+                        #{ message: { text: "...", level: "..." } }
+                        if "message" in entry and isinstance(entry["message"], dict):
+                            console.append({
+                                "text": entry["message"].get("text", ""),
+                                "level": entry["message"].get("level", "log"),
+                                "source": entry["message"].get("source", "")
+                            })
+                        #{ text: "...", level: "..." }
+                        elif "text" in entry:
+                            console.append({
+                                "text": entry.get("text", ""),
+                                "level": entry.get("level", "log"),
+                                "source": entry.get("source", "")
+                            })
+                        #just stringify the entry
+                        else:
+                            console.append({"text": str(entry), "level": "log", "source": ""})
+                    else:
+                        console.append({"text": str(entry), "level": "log", "source": ""})
+        
+        logger.info(f"Console logs extracted: {len(console)}")
         
         # DOM hash
         dom_section = data_section.get("dom", {}) if isinstance(data_section, dict) else {}
