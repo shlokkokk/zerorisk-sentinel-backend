@@ -6,6 +6,7 @@ import os
 import re
 import ssl
 import socket
+import ipaddress 
 import requests
 import logging
 import base64
@@ -24,15 +25,18 @@ except ImportError:
 try:
     import whois
     WHOIS_AVAILABLE = True
-except ImportError:
+    print(f"[WHOIS] Successfully imported whois module")
+except ImportError as e:
     WHOIS_AVAILABLE = False
+    print(f"[WHOIS] Import failed: {e}")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 GOOGLE_SAFE_BROWSING_API_KEY = os.getenv("GOOGLE_SAFE_BROWSING_API_KEY", "")
 VIRUSTOTAL_API_KEY = os.getenv("VIRUSTOTAL_API_KEY", "")
-
+ABUSEIPDB_API_KEY = os.getenv("ABUSEIPDB_API_KEY", "")
+SECURITYTRAILS_API_KEY = os.getenv("SECURITYTRAILS_API_KEY", "")
 
 class URLScanner:
     def __init__(self):
@@ -40,7 +44,21 @@ class URLScanner:
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         })
-    
+
+    def resolve_domain_to_ip(self, domain: str) -> str:
+        """Resolve domain name to IP address for AbuseIPDB lookup"""
+        try:
+            # Check if already an IP
+            ipaddress.ip_address(domain)
+            return domain
+        except ValueError:
+            # It's a domain, resolve it
+            try:
+                return socket.gethostbyname(domain)
+            except socket.gaierror:
+                logger.warning(f"[DNS] Could not resolve {domain} to IP")
+                return domain
+            
     def analyze_url(self, url: str) -> Dict[str, Any]:
         if not url.startswith(('http://', 'https://')):
             url = 'http://' + url
@@ -63,6 +81,8 @@ class URLScanner:
         result['services']['google_safe_browsing'] = self.check_google_safe_browsing(url)
         result['services']['urlhaus'] = self.check_urlhaus(url)
         result['services']['virustotal_url'] = self.check_virustotal_url(url)
+        result['services']['abuseipdb'] = self.check_abuseipdb(domain)
+        result['services']['securitytrails'] = self.check_securitytrails(domain)
         result['services']['dns'] = self.analyze_dns(domain)
         result['services']['redirects'] = self.follow_redirects(url)
         
@@ -97,6 +117,26 @@ class URLScanner:
         vt = result['services'].get('virustotal_url', {})
         if vt and vt.get('found'):
             result['threat_score'] += min(vt.get('malicious', 0) * 5, 25)
+        
+        # AbuseIPDB score boost
+        abuse = result['services'].get('abuseipdb', {})
+        if abuse.get('suspicious'):
+            result['threat_score'] += min(abuse.get('abuse_confidence', 0) // 5, 20)
+            result['findings'].append({
+                'type': 'abuseipdb_flagged',
+                'severity': 'high' if abuse.get('abuse_confidence', 0) >= 50 else 'medium',
+                'description': f"AbuseIPDB: {abuse.get('total_reports', 0)} abuse reports (confidence: {abuse.get('abuse_confidence')}%)"
+            })
+        
+        # SecurityTrails score boost
+        st = result['services'].get('securitytrails', {})
+        if st.get('suspicious'):
+            result['threat_score'] += 15
+            result['findings'].append({
+                'type': 'securitytrails_suspicious',
+                'severity': 'medium',
+                'description': f"SecurityTrails: Low reputation domain with {st.get('subdomain_count', 0)} subdomains"
+            })
         
         # Final score
         result['threat_score'] = min(result['threat_score'], 100)
@@ -296,6 +336,119 @@ class URLScanner:
             pass
         return {'available': False}
     
+    def check_abuseipdb(self, domain: str) -> Dict:
+        """Check domain/IP reputation on AbuseIPDB"""
+        if not ABUSEIPDB_API_KEY:
+            return {'available': False, 'note': 'API key not configured'}
+        
+        try:
+            # Resolve domain to IP (or use IP directly)
+            query = self.resolve_domain_to_ip(domain)
+            
+            headers = {
+                'Key': ABUSEIPDB_API_KEY,
+                'Accept': 'application/json'
+            }
+            params = {
+                'ipAddress': query,
+                'maxAgeInDays': '90',
+                'verbose': ''
+            }
+            
+            response = self.session.get(
+                'https://api.abuseipdb.com/api/v2/check',
+                headers=headers,
+                params=params,
+                timeout=8
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                ip_data = data.get('data', {})
+                return {
+                    'available': True,
+                    'ip': ip_data.get('ipAddress'),
+                    'abuse_confidence': ip_data.get('abuseConfidenceScore', 0),
+                    'country': ip_data.get('countryCode'),
+                    'isp': ip_data.get('isp'),
+                    'domain': ip_data.get('domain'),
+                    'total_reports': ip_data.get('totalReports', 0),
+                    'last_reported': ip_data.get('lastReportedAt'),
+                    'suspicious': ip_data.get('abuseConfidenceScore', 0) >= 25
+                }
+            elif response.status_code == 429:
+                return {'available': False, 'error': 'Rate limit exceeded'}
+            else:
+                return {'available': False, 'error': f'Status {response.status_code}'}
+                
+        except Exception as e:
+            logger.error(f"[ABUSEIPDB] Error: {e}")
+            return {'available': False, 'error': str(e)}
+    
+    def check_securitytrails(self, domain: str) -> Dict:
+        """Check domain intelligence on SecurityTrails"""
+        if not SECURITYTRAILS_API_KEY:
+            return {'available': False, 'note': 'API key not configured'}
+        
+        try:
+            headers = {
+                'APIKEY': SECURITYTRAILS_API_KEY
+            }
+            
+            # Get domain info
+            response = self.session.get(
+                f'https://api.securitytrails.com/v1/domain/{domain}',
+                headers=headers,
+                timeout=8
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # Get subdomains count
+                sub_response = self.session.get(
+                    f'https://api.securitytrails.com/v1/domain/{domain}/subdomains',
+                    headers=headers,
+                    timeout=8
+                )
+                subdomains = []
+                if sub_response.status_code == 200:
+                    sub_data = sub_response.json()
+                    subdomains = sub_data.get('subdomains', [])[:10]
+                
+                # Get historical WHOIS
+                whois_response = self.session.get(
+                    f'https://api.securitytrails.com/v1/history/{domain}/whois',
+                    headers=headers,
+                    timeout=8
+                )
+                whois_history = []
+                if whois_response.status_code == 200:
+                    whois_data = whois_response.json()
+                    whois_history = whois_data.get('result', {}).get('items', [])[:3]
+                
+                return {
+                    'available': True,
+                    'hostname': data.get('hostname'),
+                    'alexa_rank': data.get('alexa_rank'),
+                    'subdomain_count': len(subdomains),
+                    'subdomains': subdomains,
+                    'has_mx': data.get('current_dns', {}).get('mx', {}).get('value') is not None,
+                    'mx_records': [mx.get('host') for mx in data.get('current_dns', {}).get('mx', {}).get('value', [])] if data.get('current_dns', {}).get('mx') else [],
+                    'whois_history_count': len(whois_history),
+                    'suspicious': data.get('alexa_rank', 999999) > 1000000 and len(subdomains) > 50
+                }
+            elif response.status_code == 404:
+                return {'available': True, 'found': False, 'note': 'Domain not found in SecurityTrails'}
+            elif response.status_code == 429:
+                return {'available': False, 'error': 'Rate limit exceeded'}
+            else:
+                return {'available': False, 'error': f'Status {response.status_code}'}
+                
+        except Exception as e:
+            logger.error(f"[SECURITYTRAILS] Error: {e}")
+            return {'available': False, 'error': str(e)}
+        
     def heuristic_analysis(self, url: str, parsed) -> Dict:
         findings = []
         score = 0
@@ -360,7 +513,15 @@ class URLScanner:
         vt = result['services'].get('virustotal_url', {})
         if vt and vt.get('malicious', 0) > 0:
             parts.append(f"VirusTotal: {vt['malicious']} security vendors flagged this URL.")
+
+        abuse = result['services'].get('abuseipdb', {})
+        if abuse.get('suspicious'):
+            parts.append(f"AbuseIPDB: {abuse.get('total_reports', 0)} abuse reports with {abuse.get('abuse_confidence')}% confidence.")
         
+        st = result['services'].get('securitytrails', {})
+        if st.get('suspicious'):
+            parts.append(f"SecurityTrails: Low reputation domain detected.")
+             
         for f in result['findings'][:2]:
             parts.append(f['description'])
         

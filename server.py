@@ -83,9 +83,19 @@ def status():
     if sandbox_available:
         features.append("sandbox")
     
+    # Check URL scanner integrations
+    from url_scanner import ABUSEIPDB_API_KEY, SECURITYTRAILS_API_KEY, GOOGLE_SAFE_BROWSING_API_KEY, VIRUSTOTAL_API_KEY, URLSCAN_API_KEY
+    
     return jsonify({
         "backend": "online",
         "features": features,
+        "integrations": {
+            "abuseipdb": bool(ABUSEIPDB_API_KEY),
+            "securitytrails": bool(SECURITYTRAILS_API_KEY),
+            "google_safe_browsing": bool(GOOGLE_SAFE_BROWSING_API_KEY),
+            "virustotal_url": bool(VIRUSTOTAL_API_KEY),
+            "urlscan_io": bool(URLSCAN_API_KEY)
+        },
         "file_scanner": {
             "available": FILE_SCANNER_AVAILABLE,
             "yara_loaded": scanner.yara_rules is not None if scanner else False,
